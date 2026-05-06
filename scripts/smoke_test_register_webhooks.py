@@ -34,6 +34,8 @@ from app.shopify.webhooks import SUBSCRIBED_TOPICS  # noqa: E402
 
 STORE_KEY = "lubelife"
 STUB_BASE_URL = "https://smoke-test.example.com"  # never actually used (dry-run)
+URL_PREVIEW_LEN = 60
+SUBSCRIPTION_PREVIEW_LIMIT = 10
 
 
 def _check(label: str, cond: bool) -> None:
@@ -58,12 +60,13 @@ def main() -> int:
     print(f"=== list_existing({STORE_KEY}) ===")
     existing = webhook_admin.list_existing(client, STORE_KEY)
     print(f"  found {len(existing)} existing subscription(s)")
-    for sub in existing[:10]:
+    for sub in existing[:SUBSCRIPTION_PREVIEW_LIMIT]:
         # show first few — ids and URLs are useful when troubleshooting
-        url_preview = sub.callback_url[:60] + ("…" if len(sub.callback_url) > 60 else "")
+        truncated = len(sub.callback_url) > URL_PREVIEW_LEN
+        url_preview = sub.callback_url[:URL_PREVIEW_LEN] + ("…" if truncated else "")
         print(f"    {sub.topic:30s} -> {url_preview!r}  ({sub.id})")
-    if len(existing) > 10:
-        print(f"    ... ({len(existing) - 10} more)")
+    if len(existing) > SUBSCRIPTION_PREVIEW_LIMIT:
+        print(f"    ... ({len(existing) - SUBSCRIPTION_PREVIEW_LIMIT} more)")
 
     _check("list_existing returns a list", isinstance(existing, list))
     for sub in existing:

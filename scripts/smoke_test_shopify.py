@@ -112,12 +112,24 @@ def main() -> int:
             # bucket close to its max (≥ low-water threshold).
             # We can't directly read the parsed values from the client (private),
             # but parse_throttle_status is the same helper it uses.
-            sample = parse_throttle_status({"cost": {"throttleStatus": {
-                "currentlyAvailable": 985, "restoreRate": 50, "maximumAvailable": 1000,
-            }, "actualQueryCost": 5}})
+            sample = parse_throttle_status(
+                {
+                    "cost": {
+                        "throttleStatus": {
+                            "currentlyAvailable": 985,
+                            "restoreRate": 50,
+                            "maximumAvailable": 1000,
+                        },
+                        "actualQueryCost": 5,
+                    }
+                }
+            )
+            EXPECTED_AVAILABLE = 985  # 1000 max - 15 used by the sample query
+            EXPECTED_COST = 5
             _check(
                 "throttle parser shape ok",
-                sample["currently_available"] == 985 and sample["actual_cost"] == 5,
+                sample["currently_available"] == EXPECTED_AVAILABLE
+                and sample["actual_cost"] == EXPECTED_COST,
             )
     finally:
         client.close()

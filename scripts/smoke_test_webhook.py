@@ -14,7 +14,8 @@ All test rows are committed inside the service's UoW; this script then
 opens its own UoW to delete them, so the dev DB is clean on success.
 
 Usage:
-    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password@localhost:5432/shopify_connector \\
+    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password\
+@localhost:5432/shopify_connector \\
     uv run python scripts/smoke_test_webhook.py
 """
 
@@ -24,6 +25,7 @@ import gzip
 import json
 import pathlib
 import sys
+from http import HTTPStatus
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -60,7 +62,7 @@ def _post(client, store_key: str, body: bytes, headers: dict[str, str]):
     )
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0915 — linear smoke-test sequence; splitting fragments the flow
     configs = load_store_configs()
     if STORE_KEY not in configs:
         print(f"FAIL: {STORE_KEY!r} not in loaded store configs; check .env")
@@ -72,9 +74,9 @@ def main() -> int:
     session_factory = get_session_factory()
 
     # Sample payloads — minimal but realistic.
-    order_payload = json.dumps(
-        {"id": 9_000_000_001, "name": "#TEST-1001", "test": True}
-    ).encode("utf-8")
+    order_payload = json.dumps({"id": 9_000_000_001, "name": "#TEST-1001", "test": True}).encode(
+        "utf-8"
+    )
     unknown_topic_payload = b'{"hello": "world"}'
 
     valid_signature = compute_hmac(order_payload, cfg.webhook_secret)
@@ -92,7 +94,7 @@ def main() -> int:
                 "X-Shopify-Webhook-Id": "wh-404-1",
             },
         )
-        _check("unknown store_key returns 404", resp.status_code == 404)
+        _check("unknown store_key returns 404", resp.status_code == HTTPStatus.NOT_FOUND)
 
         # 2) Missing HMAC -> 401
         resp = _post(
@@ -101,7 +103,7 @@ def main() -> int:
             order_payload,
             {"X-Shopify-Topic": "orders/create", "X-Shopify-Webhook-Id": "wh-noauth-1"},
         )
-        _check("missing HMAC header -> 401", resp.status_code == 401)
+        _check("missing HMAC header -> 401", resp.status_code == HTTPStatus.UNAUTHORIZED)
 
         # 3) Invalid HMAC -> 401, no row written (TR-3)
         resp = _post(
@@ -114,7 +116,7 @@ def main() -> int:
                 "X-Shopify-Webhook-Id": "wh-bad-1",
             },
         )
-        _check("invalid HMAC -> 401", resp.status_code == 401)
+        _check("invalid HMAC -> 401", resp.status_code == HTTPStatus.UNAUTHORIZED)
         with session_factory() as s:
             row_count = s.scalar(
                 select(WebhookEventRow).where(WebhookEventRow.shopify_webhook_id == "wh-bad-1")
@@ -134,7 +136,7 @@ def main() -> int:
         )
         _check(
             f"valid HMAC + orders/create -> 200 (got {resp.status_code})",
-            resp.status_code == 200,
+            resp.status_code == HTTPStatus.OK,
         )
         with session_factory() as s:
             row = s.scalar(
@@ -175,7 +177,7 @@ def main() -> int:
                 "X-Shopify-Webhook-Id": "wh-unknown-1",
             },
         )
-        _check("unknown topic with valid HMAC -> 200", resp.status_code == 200)
+        _check("unknown topic with valid HMAC -> 200", resp.status_code == HTTPStatus.OK)
         _check(
             "body indicates topic not subscribed",
             b"topic not subscribed" in resp.data,
@@ -198,7 +200,7 @@ def main() -> int:
                 "X-Shopify-Webhook-Id": "wh-good-2",
             },
         )
-        _check("second webhook -> 200", resp.status_code == 200)
+        _check("second webhook -> 200", resp.status_code == HTTPStatus.OK)
         with session_factory() as s:
             store_count = len(
                 s.scalars(select(StoreRow).where(StoreRow.store_key == STORE_KEY)).all()

@@ -19,7 +19,8 @@ Cleans up after itself by deleting all rows it created so the dev DB is
 unchanged on success.
 
 Usage:
-    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password@localhost:5432/shopify_connector \\
+    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password\
+@localhost:5432/shopify_connector \\
     uv run python scripts/smoke_test_dispatcher.py
 """
 
@@ -28,6 +29,7 @@ from __future__ import annotations
 import json
 import pathlib
 import sys
+from http import HTTPStatus
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -41,10 +43,7 @@ from app import create_app  # noqa: E402
 from app.db.engine import get_session_factory  # noqa: E402
 from app.db.orm.customer import CustomerRow  # noqa: E402
 from app.db.orm.order import (  # noqa: E402
-    FulfillmentRow,
-    OrderLineItemRow,
     OrderRow,
-    OrderShippingAddressRow,
 )
 from app.db.orm.store import StoreRow  # noqa: E402
 from app.db.orm.webhook_event import WebhookEventRow  # noqa: E402
@@ -54,6 +53,13 @@ from app.shopify.webhooks import compute_hmac  # noqa: E402
 STORE_KEY = "lubelife"
 ORDER_GID = "gid://shopify/Order/9999999001"
 CUSTOMER_GID = "gid://shopify/Customer/9999999100"
+
+# Test-data invariants — referenced from multiple assertions below.
+INITIAL_LINE_QTY = 2
+UPDATED_LINE_QTY = 5
+EXPECTED_LINE_ITEMS = 1
+EXPECTED_FULFILLMENTS = 1
+EXPECTED_CUSTOMER_ROWS = 1
 
 
 def _check(label: str, cond: bool, detail: str = "") -> None:
@@ -73,7 +79,7 @@ def _post(client, store_key, body, headers):
     )
 
 
-def _order_payload(line_qty: int = 2) -> bytes:
+def _order_payload(line_qty: int = INITIAL_LINE_QTY) -> bytes:
     return json.dumps(
         {
             "id": 9_999_999_001,
@@ -179,7 +185,7 @@ def _cleanup() -> None:
         s.commit()
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0915 — linear smoke-test sequence; splitting fragments the flow
     configs = load_store_configs()
     if STORE_KEY not in configs:
         print(f"FAIL: {STORE_KEY!r} not in loaded store configs")
@@ -190,7 +196,7 @@ def main() -> int:
     client = app.test_client()
     factory = get_session_factory()
 
-    body1 = _order_payload(line_qty=2)
+    body1 = _order_payload(line_qty=INITIAL_LINE_QTY)
     sig1 = compute_hmac(body1, cfg.webhook_secret)
 
     try:
@@ -205,7 +211,7 @@ def main() -> int:
                 "X-Shopify-Webhook-Id": "smoke-create-1",
             },
         )
-        _check(f"orders/create -> 200 (got {resp.status_code})", resp.status_code == 200)
+        _check(f"orders/create -> 200 (got {resp.status_code})", resp.status_code == HTTPStatus.OK)
 
         with factory() as s:
             event = s.scalar(
@@ -226,17 +232,24 @@ def main() -> int:
             customer = s.scalar(select(CustomerRow).where(CustomerRow.gid == CUSTOMER_GID))
         _check("order row landed", order is not None)
         _check("customer row landed", customer is not None)
-        assert order is not None and customer is not None
+        assert order is not None
+        assert customer is not None
         _check(
             f"order.customer_id == customer.id ({order.customer_id} == {customer.id})",
             order.customer_id == customer.id,
         )
-        _check(f"order.financial_status='paid' (got {order.financial_status!r})",
-               order.financial_status == "paid")
-        _check(f"order.total_price == 21.98 (got {order.total_price})",
-               str(order.total_price) == "21.9800")
-        _check(f"order.total_shipping == 1.00 (got {order.total_shipping})",
-               str(order.total_shipping) == "1.0000")
+        _check(
+            f"order.financial_status='paid' (got {order.financial_status!r})",
+            order.financial_status == "paid",
+        )
+        _check(
+            f"order.total_price == 21.98 (got {order.total_price})",
+            str(order.total_price) == "21.9800",
+        )
+        _check(
+            f"order.total_shipping == 1.00 (got {order.total_shipping})",
+            str(order.total_shipping) == "1.0000",
+        )
 
         with factory() as s:
             order_full = s.scalar(select(OrderRow).where(OrderRow.gid == ORDER_GID))
@@ -244,23 +257,39 @@ def main() -> int:
             line_items = order_full.line_items
             shipping = order_full.shipping_address
             fulfillments = order_full.fulfillments
-        _check(f"order has 1 line item (got {len(line_items)})", len(line_items) == 1)
-        _check(f"line_items[0].sku='SMOKE-1' (got {line_items[0].sku!r})",
-               line_items[0].sku == "SMOKE-1")
-        _check(f"line_items[0].quantity=2 (got {line_items[0].quantity})",
-               line_items[0].quantity == 2)
-        _check("line_items[0].variant_id=None (catalog sync deferred)",
-               line_items[0].variant_id is None)
+        _check(
+            f"order has 1 line item (got {len(line_items)})",
+            len(line_items) == EXPECTED_LINE_ITEMS,
+        )
+        _check(
+            f"line_items[0].sku='SMOKE-1' (got {line_items[0].sku!r})",
+            line_items[0].sku == "SMOKE-1",
+        )
+        _check(
+            f"line_items[0].quantity={INITIAL_LINE_QTY} (got {line_items[0].quantity})",
+            line_items[0].quantity == INITIAL_LINE_QTY,
+        )
+        _check(
+            "line_items[0].variant_id=None (catalog sync deferred)",
+            line_items[0].variant_id is None,
+        )
         _check("shipping_address present", shipping is not None)
         assert shipping is not None
-        _check(f"shipping.city='Santa Clarita' (got {shipping.city!r})",
-               shipping.city == "Santa Clarita")
-        _check(f"order has 1 fulfillment (got {len(fulfillments)})", len(fulfillments) == 1)
-        _check(f"fulfillment.tracking_number='1Z9SMOKE' (got {fulfillments[0].tracking_number!r})",
-               fulfillments[0].tracking_number == "1Z9SMOKE")
+        _check(
+            f"shipping.city='Santa Clarita' (got {shipping.city!r})",
+            shipping.city == "Santa Clarita",
+        )
+        _check(
+            f"order has 1 fulfillment (got {len(fulfillments)})",
+            len(fulfillments) == EXPECTED_FULFILLMENTS,
+        )
+        _check(
+            f"fulfillment.tracking_number='1Z9SMOKE' (got {fulfillments[0].tracking_number!r})",
+            fulfillments[0].tracking_number == "1Z9SMOKE",
+        )
 
         # 2) orders/updated re-runs on same payload — idempotency
-        body2 = _order_payload(line_qty=5)  # mutate quantity to verify update
+        body2 = _order_payload(line_qty=UPDATED_LINE_QTY)  # mutate quantity to verify update
         sig2 = compute_hmac(body2, cfg.webhook_secret)
         resp = _post(
             client,
@@ -272,19 +301,27 @@ def main() -> int:
                 "X-Shopify-Webhook-Id": "smoke-update-1",
             },
         )
-        _check(f"orders/updated -> 200 (got {resp.status_code})", resp.status_code == 200)
+        _check(f"orders/updated -> 200 (got {resp.status_code})", resp.status_code == HTTPStatus.OK)
         with factory() as s:
             order2 = s.scalar(select(OrderRow).where(OrderRow.gid == ORDER_GID))
             assert order2 is not None
             line_items2 = order2.line_items
-        _check(f"still 1 line item after update (got {len(line_items2)})", len(line_items2) == 1)
-        _check(f"quantity updated to 5 (got {line_items2[0].quantity})",
-               line_items2[0].quantity == 5)
+        _check(
+            f"still 1 line item after update (got {len(line_items2)})",
+            len(line_items2) == EXPECTED_LINE_ITEMS,
+        )
+        _check(
+            f"quantity updated to {UPDATED_LINE_QTY} (got {line_items2[0].quantity})",
+            line_items2[0].quantity == UPDATED_LINE_QTY,
+        )
         with factory() as s:
             cust_count = len(
                 s.scalars(select(CustomerRow).where(CustomerRow.gid == CUSTOMER_GID)).all()
             )
-        _check(f"customer not duplicated on update (got {cust_count} rows)", cust_count == 1)
+        _check(
+            f"customer not duplicated on update (got {cust_count} rows)",
+            cust_count == EXPECTED_CUSTOMER_ROWS,
+        )
 
         # 3) Unimplemented topic — products/create — recorded, marked failed
         prod_body = b'{"id": 1, "title": "Whatever"}'
@@ -299,12 +336,12 @@ def main() -> int:
                 "X-Shopify-Webhook-Id": "smoke-prod-1",
             },
         )
-        _check(f"products/create -> 200 (got {resp.status_code})", resp.status_code == 200)
+        _check(
+            f"products/create -> 200 (got {resp.status_code})", resp.status_code == HTTPStatus.OK
+        )
         with factory() as s:
             prod_event = s.scalar(
-                select(WebhookEventRow).where(
-                    WebhookEventRow.shopify_webhook_id == "smoke-prod-1"
-                )
+                select(WebhookEventRow).where(WebhookEventRow.shopify_webhook_id == "smoke-prod-1")
             )
         _check("products/create event row exists", prod_event is not None)
         assert prod_event is not None

@@ -20,7 +20,8 @@ Shopify are real production data that the dev DB legitimately holds.
 Upserts are idempotent so re-runs are safe.
 
 Usage:
-    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password@localhost:5432/shopify_connector \\
+    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password\
+@localhost:5432/shopify_connector \\
     uv run python scripts/smoke_test_bulk_sync.py
 """
 
@@ -59,7 +60,7 @@ def _check(label: str, cond: bool, detail: str = "") -> None:
         raise SystemExit(1)
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0915 — linear smoke-test sequence; splitting fragments the flow
     configs = load_store_configs()
     if STORE_KEY not in configs:
         print(f"FAIL: {STORE_KEY!r} not in loaded store configs (no real creds in .env?)")
@@ -207,13 +208,15 @@ def main() -> int:
                 li.variant_id is None,
             )
         _check(
-            f"recent order has 0 fulfillments (bulk excludes them) (got {len(recent.fulfillments)})",
+            f"recent order has 0 fulfillments (bulk excludes them) "
+            f"(got {len(recent.fulfillments)})",
             len(recent.fulfillments) == 0,
         )
+        MIN_COUNTRY_CODE_LEN = 2  # ISO 3166-1 alpha-2
         if shipping is not None:
             _check(
                 f"shipping_address.country present when populated (got {shipping.country!r})",
-                shipping.country is None or len(shipping.country) >= 2,
+                shipping.country is None or len(shipping.country) >= MIN_COUNTRY_CODE_LEN,
             )
 
     print()

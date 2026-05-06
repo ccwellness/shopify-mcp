@@ -6,7 +6,8 @@ mapper. Cleans up after itself by rolling back the outer transaction so
 the dev DB is unchanged on success.
 
 Usage:
-    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password@localhost:5432/shopify_connector \\
+    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password\
+@localhost:5432/shopify_connector \\
     uv run python scripts/smoke_test_repos.py
 """
 
@@ -71,7 +72,6 @@ from app.domain.specs import (
     SubscriptionSpec,
 )
 
-
 NOW = datetime.now(tz=UTC)
 
 
@@ -83,7 +83,7 @@ def _check(label: str, cond: bool, detail: str = "") -> None:
         raise SystemExit(1)
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0915 — linear smoke-test sequence; splitting fragments the flow
     factory = get_session_factory()
     uow = SqlAlchemyUnitOfWork(factory)
 
@@ -105,7 +105,10 @@ def main() -> int:
         )
         uow.stores.upsert(store)
         loaded = uow.stores.get_by_key("smoke")
-        _check("stores.upsert + get_by_key", loaded is not None and loaded.shop_domain == "smoke.myshopify.com")
+        _check(
+            "stores.upsert + get_by_key",
+            loaded is not None and loaded.shop_domain == "smoke.myshopify.com",
+        )
         assert loaded is not None
         store_id = loaded.id
 
@@ -132,7 +135,9 @@ def main() -> int:
         )
         uow.locations.upsert(loc)
         loc_loaded = uow.locations.get_by_gid(store_id, "gid://shopify/Location/1")
-        _check("locations.upsert + get_by_gid", loc_loaded is not None and loc_loaded.name == "Main")
+        _check(
+            "locations.upsert + get_by_gid", loc_loaded is not None and loc_loaded.name == "Main"
+        )
         assert loc_loaded is not None
         location_id = loc_loaded.id
 
@@ -221,7 +226,10 @@ def main() -> int:
         )
         uow.inventory.upsert_item(item)
         item_loaded = uow.inventory.get_item(store_id, "gid://shopify/InventoryItem/2001")
-        _check("inventory.upsert_item + get_item", item_loaded is not None and item_loaded.sku == "WIDGET-1")
+        _check(
+            "inventory.upsert_item + get_item",
+            item_loaded is not None and item_loaded.sku == "WIDGET-1",
+        )
         assert item_loaded is not None
 
         level = InventoryLevel(
@@ -236,8 +244,14 @@ def main() -> int:
             updated_at=NOW,
         )
         uow.inventory.upsert_level(level)
-        levels = uow.inventory.list_levels(InventorySpec(store_ids=(store_id,), location_id=location_id))
-        _check("inventory.list_levels", len(levels.items) == 1 and levels.items[0].available == 3)
+        levels = uow.inventory.list_levels(
+            InventorySpec(store_ids=(store_id,), location_id=location_id)
+        )
+        EXPECTED_AVAILABLE = 3  # set above: on_hand=5, committed=2 → available=3
+        _check(
+            "inventory.list_levels",
+            len(levels.items) == 1 and levels.items[0].available == EXPECTED_AVAILABLE,
+        )
         low = uow.inventory.list_low_stock(store_id, threshold=10)
         _check("inventory.list_low_stock", len(low) == 1)
 
@@ -407,16 +421,17 @@ def main() -> int:
             pulled_at=NOW,
         )
         uow.analytics.upsert_sessions_day(sd2)
+        UPDATED_SESSIONS = 1100
         sd_loaded = uow.analytics.get_sessions_day(store_id, today)
         _check(
             "analytics.upsert_sessions_day + ON CONFLICT update",
-            sd_loaded is not None and sd_loaded.sessions == 1100,
+            sd_loaded is not None and sd_loaded.sessions == UPDATED_SESSIONS,
         )
 
         kpi = AnalyticsKpiDay(
             store_id=store_id,
             date=today,
-            sessions=1100,
+            sessions=UPDATED_SESSIONS,
             orders=26,
             units=52,
             revenue=Decimal("2700.00"),
@@ -428,7 +443,10 @@ def main() -> int:
         kpi_list = uow.analytics.list_kpis(
             AnalyticsWindowSpec(store_ids=(store_id,), since=today, until=today)
         )
-        _check("analytics.list_kpis window", len(kpi_list) == 1 and kpi_list[0].sessions == 1100)
+        _check(
+            "analytics.list_kpis window",
+            len(kpi_list) == 1 and kpi_list[0].sessions == UPDATED_SESSIONS,
+        )
 
         # --- sync_state ------------------------------------------------------
         sync_row = SyncStateRow(

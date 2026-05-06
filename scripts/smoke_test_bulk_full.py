@@ -19,7 +19,8 @@ A 7-day window keeps the bulk ops small. Re-runs are idempotent (upserts).
 The script does NOT delete any rows.
 
 Usage:
-    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password@localhost:5432/shopify_connector \\
+    DATABASE_URL=postgresql+psycopg://shopify_connector:dev_password\
+@localhost:5432/shopify_connector \\
     .venv\\Scripts\\python.exe scripts\\smoke_test_bulk_full.py
 """
 
@@ -58,7 +59,7 @@ def _check(label: str, cond: bool) -> None:
         raise SystemExit(1)
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0915 — linear smoke-test sequence; splitting fragments the flow
     configs = load_store_configs()
     if STORE_KEY not in configs:
         print(f"FAIL: {STORE_KEY!r} not in loaded store configs (no real creds in .env?)")
@@ -107,9 +108,7 @@ def main() -> int:
     else:
         _check(f"customers table has rows ({cust_count} for store)", cust_count >= 1)
         with factory() as s:
-            sample = s.scalar(
-                select(CustomerRow).where(CustomerRow.store_id == store.id).limit(1)
-            )
+            sample = s.scalar(select(CustomerRow).where(CustomerRow.store_id == store.id).limit(1))
         assert sample is not None
         _check(
             f"sample customer.gid is GID (got {sample.gid!r})",
@@ -142,9 +141,7 @@ def main() -> int:
         _check("products table has rows", prod_count >= 1)
         _check("variants table has rows (at least one product had a variant)", var_count >= 1)
         with factory() as s:
-            sample_p = s.scalar(
-                select(ProductRow).where(ProductRow.store_id == store.id).limit(1)
-            )
+            sample_p = s.scalar(select(ProductRow).where(ProductRow.store_id == store.id).limit(1))
             assert sample_p is not None
             sample_variants = list(sample_p.variants)
         _check(

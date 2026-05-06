@@ -15,8 +15,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0001"
 down_revision: str | None = None
@@ -38,7 +39,9 @@ def upgrade() -> None:
         sa.Column("shop_domain", sa.Text, nullable=False),
         sa.Column("display_name", sa.Text, nullable=False),
         sa.Column("plus", sa.Boolean, nullable=False, server_default=sa.false()),
-        sa.Column("subscription_provider", sa.Text, nullable=False, server_default=sa.text("'unknown'")),
+        sa.Column(
+            "subscription_provider", sa.Text, nullable=False, server_default=sa.text("'unknown'")
+        ),
         sa.Column("read_only", sa.Boolean, nullable=False, server_default=sa.true()),
         sa.Column("active", sa.Boolean, nullable=False, server_default=sa.true()),
         sa.Column("timezone", sa.Text, nullable=True),
@@ -107,7 +110,12 @@ def upgrade() -> None:
         sa.Column("status", sa.Text, nullable=False, server_default=sa.text("'active'")),
         sa.Column("vendor", sa.Text, nullable=True),
         sa.Column("product_type", sa.Text, nullable=True),
-        sa.Column("tags", postgresql.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'::text[]")),
+        sa.Column(
+            "tags",
+            postgresql.ARRAY(sa.Text),
+            nullable=False,
+            server_default=sa.text("'{}'::text[]"),
+        ),
         sa.Column("created_at", TS, nullable=False, server_default=NOW),
         sa.Column("updated_at", TS, nullable=False, server_default=NOW),
         sa.Column("last_seen_at", TS, nullable=False, server_default=NOW),
@@ -120,7 +128,12 @@ def upgrade() -> None:
         "variants",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
-        sa.Column("product_id", sa.BigInteger, sa.ForeignKey("products.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "product_id",
+            sa.BigInteger,
+            sa.ForeignKey("products.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("gid", sa.Text, nullable=False),
         sa.Column("legacy_id", sa.BigInteger, nullable=False),
         sa.Column("title", sa.Text, nullable=False),
@@ -143,7 +156,12 @@ def upgrade() -> None:
         "inventory_items",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
-        sa.Column("variant_id", sa.BigInteger, sa.ForeignKey("variants.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "variant_id",
+            sa.BigInteger,
+            sa.ForeignKey("variants.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("gid", sa.Text, nullable=False),
         sa.Column("legacy_id", sa.BigInteger, nullable=False),
         sa.Column("sku", sa.Text, nullable=True),
@@ -160,8 +178,18 @@ def upgrade() -> None:
         "inventory_levels",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
-        sa.Column("inventory_item_id", sa.BigInteger, sa.ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("location_id", sa.BigInteger, sa.ForeignKey("locations.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "inventory_item_id",
+            sa.BigInteger,
+            sa.ForeignKey("inventory_items.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "location_id",
+            sa.BigInteger,
+            sa.ForeignKey("locations.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("available", sa.Integer, nullable=True),
         sa.Column("on_hand", sa.Integer, nullable=True),
         sa.Column("committed", sa.Integer, nullable=True),
@@ -169,19 +197,28 @@ def upgrade() -> None:
         sa.Column("updated_at", TS, nullable=False, server_default=NOW),
         sa.Column("last_seen_at", TS, nullable=False, server_default=NOW),
         sa.UniqueConstraint(
-            "store_id", "inventory_item_id", "location_id",
+            "store_id",
+            "inventory_item_id",
+            "location_id",
             name="uq_inventory_levels_store_item_location",
         ),
     )
     # TR-18: (store_id, location_id)
-    op.create_index("ix_inventory_levels_store_location", "inventory_levels", ["store_id", "location_id"])
+    op.create_index(
+        "ix_inventory_levels_store_location", "inventory_levels", ["store_id", "location_id"]
+    )
 
     # ---- orders ------------------------------------------------------------
     op.create_table(
         "orders",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
-        sa.Column("customer_id", sa.BigInteger, sa.ForeignKey("customers.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "customer_id",
+            sa.BigInteger,
+            sa.ForeignKey("customers.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("gid", sa.Text, nullable=False),
         sa.Column("legacy_id", sa.BigInteger, nullable=False),
         sa.Column("name", sa.Text, nullable=False),  # human-readable, e.g. "#1001"
@@ -217,10 +254,25 @@ def upgrade() -> None:
     op.create_table(
         "order_line_items",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-        sa.Column("order_id", sa.BigInteger, sa.ForeignKey("orders.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "order_id",
+            sa.BigInteger,
+            sa.ForeignKey("orders.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
-        sa.Column("variant_id", sa.BigInteger, sa.ForeignKey("variants.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("product_id", sa.BigInteger, sa.ForeignKey("products.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "variant_id",
+            sa.BigInteger,
+            sa.ForeignKey("variants.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+        sa.Column(
+            "product_id",
+            sa.BigInteger,
+            sa.ForeignKey("products.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("gid", sa.Text, nullable=True),
         sa.Column("legacy_id", sa.BigInteger, nullable=True),
         sa.Column("title", sa.Text, nullable=False),
@@ -240,7 +292,12 @@ def upgrade() -> None:
     # ---- order_shipping_addresses ------------------------------------------
     op.create_table(
         "order_shipping_addresses",
-        sa.Column("order_id", sa.BigInteger, sa.ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "order_id",
+            sa.BigInteger,
+            sa.ForeignKey("orders.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
         sa.Column("name", sa.Text, nullable=True),
         sa.Column("company", sa.Text, nullable=True),
@@ -259,9 +316,19 @@ def upgrade() -> None:
     op.create_table(
         "fulfillments",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-        sa.Column("order_id", sa.BigInteger, sa.ForeignKey("orders.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "order_id",
+            sa.BigInteger,
+            sa.ForeignKey("orders.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
-        sa.Column("location_id", sa.BigInteger, sa.ForeignKey("locations.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "location_id",
+            sa.BigInteger,
+            sa.ForeignKey("locations.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("gid", sa.Text, nullable=False),
         sa.Column("legacy_id", sa.BigInteger, nullable=False),
         sa.Column("status", sa.Text, nullable=False),
@@ -283,7 +350,12 @@ def upgrade() -> None:
         "subscription_contracts",
         sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
         sa.Column("store_id", sa.BigInteger, sa.ForeignKey("stores.id"), nullable=False),
-        sa.Column("customer_id", sa.BigInteger, sa.ForeignKey("customers.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "customer_id",
+            sa.BigInteger,
+            sa.ForeignKey("customers.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("provider", sa.Text, nullable=False),  # "native" | "ordergroove" | ...
         sa.Column("provider_contract_id", sa.Text, nullable=False),
         sa.Column("gid", sa.Text, nullable=True),  # only set when provider="native"
@@ -297,11 +369,15 @@ def upgrade() -> None:
         sa.Column("updated_at", TS, nullable=False, server_default=NOW),
         sa.Column("last_seen_at", TS, nullable=False, server_default=NOW),
         sa.UniqueConstraint(
-            "store_id", "provider", "provider_contract_id",
+            "store_id",
+            "provider",
+            "provider_contract_id",
             name="uq_subscription_contracts_provider_id",
         ),
     )
-    op.create_index("ix_subscription_contracts_store_status", "subscription_contracts", ["store_id", "status"])
+    op.create_index(
+        "ix_subscription_contracts_store_status", "subscription_contracts", ["store_id", "status"]
+    )
 
     # ---- sessions_daily ----------------------------------------------------
     op.create_table(
@@ -312,7 +388,9 @@ def upgrade() -> None:
         sa.Column("orders", sa.Integer, nullable=True),
         sa.Column("total_sales", MONEY, nullable=True),
         sa.Column("units_sold", sa.Integer, nullable=True),
-        sa.Column("source", sa.Text, nullable=False, server_default=sa.text("'shopifyql'")),  # "shopifyql" | "ga4"
+        sa.Column(
+            "source", sa.Text, nullable=False, server_default=sa.text("'shopifyql'")
+        ),  # "shopifyql" | "ga4"
         sa.Column("pulled_at", TS, nullable=False, server_default=NOW),
     )
 
@@ -351,14 +429,22 @@ def upgrade() -> None:
         sa.Column("shopify_webhook_id", sa.Text, nullable=True),
         sa.Column("received_at", TS, nullable=False, server_default=NOW),
         sa.Column("hmac_valid", sa.Boolean, nullable=False),
-        sa.Column("payload_compressed", sa.LargeBinary, nullable=False),  # raw body, gzip-compressed
+        sa.Column(
+            "payload_compressed", sa.LargeBinary, nullable=False
+        ),  # raw body, gzip-compressed
         sa.Column("payload_size", sa.Integer, nullable=False),
-        sa.Column("processing_status", sa.Text, nullable=False, server_default=sa.text("'received'")),
+        sa.Column(
+            "processing_status", sa.Text, nullable=False, server_default=sa.text("'received'")
+        ),
         sa.Column("processed_at", TS, nullable=True),
         sa.Column("error", sa.Text, nullable=True),
     )
-    op.create_index("ix_webhook_events_store_received", "webhook_events_log", ["store_id", "received_at"])
-    op.create_index("ix_webhook_events_topic_received", "webhook_events_log", ["topic", "received_at"])
+    op.create_index(
+        "ix_webhook_events_store_received", "webhook_events_log", ["store_id", "received_at"]
+    )
+    op.create_index(
+        "ix_webhook_events_topic_received", "webhook_events_log", ["topic", "received_at"]
+    )
 
     # ---- api_audit_log (TR-6) ---------------------------------------------
     op.create_table(

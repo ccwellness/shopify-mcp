@@ -42,7 +42,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +56,7 @@ STORES: list[str] = ["LUBELIFE", "SHOPJO", "SHOPSHIBARI"]
 # ---------------------------------------------------------------------------
 # .env loading
 # ---------------------------------------------------------------------------
+
 
 def parse_dotenv(path: Path) -> dict[str, str]:
     """Minimal .env parser: ignores comments / blank lines, strips quotes."""
@@ -82,9 +83,8 @@ def load_env() -> dict[str, str]:
 # OAuth client credentials grant
 # ---------------------------------------------------------------------------
 
-def oauth_token_exchange(
-    shop_domain: str, client_id: str, client_secret: str
-) -> dict[str, Any]:
+
+def oauth_token_exchange(shop_domain: str, client_id: str, client_secret: str) -> dict[str, Any]:
     """POST to /admin/oauth/access_token with grant_type=client_credentials.
 
     On success returns {"access_token": "...", "scope": "...", "expires_in": 86399}.
@@ -98,7 +98,7 @@ def oauth_token_exchange(
             "client_secret": client_secret,
         }
     ).encode("utf-8")
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 — URL built from validated config
         url,
         data=body,
         headers={
@@ -108,7 +108,7 @@ def oauth_token_exchange(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return {
@@ -123,6 +123,7 @@ def oauth_token_exchange(
 # GraphQL transport
 # ---------------------------------------------------------------------------
 
+
 def graphql(
     shop_domain: str,
     token: str,
@@ -132,7 +133,7 @@ def graphql(
 ) -> dict[str, Any]:
     url = f"https://{shop_domain}/admin/api/{api_version}/graphql.json"
     body = json.dumps({"query": query, "variables": variables or {}}).encode("utf-8")
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 — URL built from validated config
         url,
         data=body,
         headers={
@@ -143,7 +144,7 @@ def graphql(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return {
@@ -204,7 +205,9 @@ VARIANTS_COUNT_QUERY = "{ productVariantsCount { count } }"
 
 SHOPIFYQL_SESSIONS_QUERY = """
 {
-  shopifyqlQuery(query: "FROM sales, sessions SHOW day, total_sales, orders, sessions GROUP BY day SINCE -7d UNTIL -1d") {
+  shopifyqlQuery(
+    query: "FROM sales, sessions SHOW day, total_sales, orders, sessions GROUP BY day SINCE -7d UNTIL -1d"
+  ) {
     parseErrors
     tableData {
       columns { name dataType displayName subType }
@@ -212,16 +215,17 @@ SHOPIFYQL_SESSIONS_QUERY = """
     }
   }
 }
-"""
+"""  # noqa: E501 — ShopifyQL string can't be wrapped without breaking the query
 
 
 def thirty_days_ago_iso() -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    return (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 # ---------------------------------------------------------------------------
 # Probe runner
 # ---------------------------------------------------------------------------
+
 
 def safe_get(payload: dict[str, Any], *path: str) -> Any:
     cur: Any = payload
@@ -232,7 +236,7 @@ def safe_get(payload: dict[str, Any], *path: str) -> Any:
     return cur
 
 
-def run_probes_for_store(
+def run_probes_for_store(  # noqa: PLR0912 — linear probe sequence; splitting hides the flow
     shop_domain: str, token: str, api_version: str
 ) -> dict[str, Any]:
     out: dict[str, Any] = {"shop": shop_domain, "api_version": api_version}
@@ -295,9 +299,7 @@ def run_probes_for_store(
         else {"_error": True, "raw": orders_payload}
     )
 
-    products_payload = graphql(
-        shop_domain, token, PRODUCTS_COUNT_QUERY, api_version=api_version
-    )
+    products_payload = graphql(shop_domain, token, PRODUCTS_COUNT_QUERY, api_version=api_version)
     products_count = safe_get(products_payload, "data", "productsCount", "count")
     out["products"] = (
         {"count": products_count}
@@ -305,9 +307,7 @@ def run_probes_for_store(
         else {"_error": True, "raw": products_payload}
     )
 
-    variants_payload = graphql(
-        shop_domain, token, VARIANTS_COUNT_QUERY, api_version=api_version
-    )
+    variants_payload = graphql(shop_domain, token, VARIANTS_COUNT_QUERY, api_version=api_version)
     variants_count = safe_get(variants_payload, "data", "productVariantsCount", "count")
     if variants_count is not None:
         out["variants"] = {"count": variants_count}
@@ -319,9 +319,7 @@ def run_probes_for_store(
     else:
         out["variants"] = {"_error": True, "raw": variants_payload}
 
-    sql_payload = graphql(
-        shop_domain, token, SHOPIFYQL_SESSIONS_QUERY, api_version=api_version
-    )
+    sql_payload = graphql(shop_domain, token, SHOPIFYQL_SESSIONS_QUERY, api_version=api_version)
     # Top-level GraphQL errors (auth, scope, schema mismatches) come back here.
     if sql_payload.get("errors"):
         msgs = [e.get("message", "") for e in sql_payload["errors"]]
@@ -358,7 +356,10 @@ def run_probes_for_store(
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
-def render_store(slug: str, results: dict[str, Any]) -> str:
+
+def render_store(  # noqa: PLR0912, PLR0915 — flat markdown rendering; refactor would only fragment it
+    slug: str, results: dict[str, Any]
+) -> str:
     L = [f"### {slug.lower()}.com  --  `{results['shop']}`", ""]
     L.append("| Probe | Result |")
     L.append("|---|---|")
@@ -383,9 +384,14 @@ def render_store(slug: str, results: dict[str, Any]) -> str:
         )
         for d in locs.get("details", []):
             a = d["address"]
-            addr_str = ", ".join(
-                str(v) for v in (a.get("address1"), a.get("city"), a.get("province"), a.get("zip")) if v
-            ) or "_no address_"
+            addr_str = (
+                ", ".join(
+                    str(v)
+                    for v in (a.get("address1"), a.get("city"), a.get("province"), a.get("zip"))
+                    if v
+                )
+                or "_no address_"
+            )
             flags = []
             if d.get("fulfills_online"):
                 flags.append("online")
@@ -403,9 +409,7 @@ def render_store(slug: str, results: dict[str, Any]) -> str:
                 )
 
     orders = results["orders_30d"]
-    L.append(
-        f"| Orders (last 30d) | {orders.get('count', '**ERROR**')} |"
-    )
+    L.append(f"| Orders (last 30d) | {orders.get('count', '**ERROR**')} |")
 
     prods = results["products"]
     L.append(f"| Products | {prods.get('count', '**ERROR**')} |")
@@ -422,7 +426,9 @@ def render_store(slug: str, results: dict[str, Any]) -> str:
     status = "**PASS**" if sql.get("pass") else "**FAIL**"
     detail = ""
     if sql.get("scope_issue"):
-        detail = " - **scope issue** (likely missing `read_reports` and/or Level 2 customer data access)"
+        detail = (
+            " - **scope issue** (likely missing `read_reports` and/or Level 2 customer data access)"
+        )
     elif "graphql_errors" in sql:
         detail = f" - GraphQL errors: `{sql['graphql_errors'][:1]}`"
     elif "parse_errors" in sql:
@@ -466,14 +472,17 @@ def render_summary_table(per_store: list[tuple[str, dict[str, Any]]]) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     env = load_env()
     api_version = env.get("SHOPIFY_API_VERSION", DEFAULT_API_VERSION)
 
-    print(f"# Phase 0 Probe Results")
+    print("# Phase 0 Probe Results")
     print()
-    print(f"_Shopify Admin API version: `{api_version}` -- generated "
-          f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}_")
+    print(
+        f"_Shopify Admin API version: `{api_version}` -- generated "
+        f"{datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}_"
+    )
     print()
 
     per_store: list[tuple[str, dict[str, Any]]] = []

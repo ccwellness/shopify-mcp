@@ -61,14 +61,15 @@ def oauth_exchange(shop: str, cid: str, csec: str) -> dict[str, Any]:
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    # URL is built from validated shop config, not user input.
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
         return json.loads(resp.read().decode("utf-8"))
 
 
 def graphql(shop: str, token: str, query: str, api_version: str) -> dict[str, Any]:
     url = f"https://{shop}/admin/api/{api_version}/graphql.json"
     body = json.dumps({"query": query}).encode("utf-8")
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 — URL built from validated config
         url,
         data=body,
         headers={
@@ -79,7 +80,7 @@ def graphql(shop: str, token: str, query: str, api_version: str) -> dict[str, An
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return {
@@ -92,7 +93,7 @@ def shopifyql_probe(query_str: str) -> str:
     """Wrap a raw ShopifyQL string into a GraphQL document (NEW schema, 2026-04)."""
     escaped = query_str.replace("\\", "\\\\").replace('"', '\\"')
     return (
-        "{ shopifyqlQuery(query: \"" + escaped + "\") { "
+        '{ shopifyqlQuery(query: "' + escaped + '") { '
         "  parseErrors "
         "  tableData { columns { name dataType displayName subType } rows } "
         "} }"
@@ -103,17 +104,16 @@ def shopifyql_probe(query_str: str) -> str:
 # per Shopify's docs example: `FROM sales, sessions SHOW day, total_sales, sessions GROUP BY day`.
 VARIATIONS = [
     # 1. sessions dataset solo, sessions column
-    ("sessions-solo",
-     "FROM sessions SHOW sessions SINCE -1d UNTIL today"),
+    ("sessions-solo", "FROM sessions SHOW sessions SINCE -1d UNTIL today"),
     # 2. Joined sales + sessions per Shopify docs example.
-    ("docs-example",
-     "FROM sales, sessions SHOW day, total_sales, sessions GROUP BY day SINCE -7d UNTIL -1d"),
+    (
+        "docs-example",
+        "FROM sales, sessions SHOW day, total_sales, sessions GROUP BY day SINCE -7d UNTIL -1d",
+    ),
     # 3. Sales dataset, no sessions --- confirm sales works at all on this plan.
-    ("sales-no-sessions",
-     "FROM sales SHOW total_sales, orders SINCE -7d UNTIL -1d"),
+    ("sales-no-sessions", "FROM sales SHOW total_sales, orders SINCE -7d UNTIL -1d"),
     # 4. Bare minimum --- confirm ShopifyQL responds for any query.
-    ("ping",
-     "FROM products SHOW count"),
+    ("ping", "FROM products SHOW count"),
 ]
 
 
@@ -150,33 +150,31 @@ def main() -> int:
     print("\n--- introspection: type existence ---")
     introspect_types = (
         "{ "
-        "  tableResponse: __type(name: \"TableResponse\") { name kind } "
-        "  parseError: __type(name: \"ParseError\") { name kind } "
-        "  shopifyqlResponse: __type(name: \"ShopifyqlResponse\") { name kind } "
-        "  shopifyQLResponse: __type(name: \"ShopifyQLResponse\") { name kind } "
-        "  tableData: __type(name: \"TableData\") { name kind } "
+        '  tableResponse: __type(name: "TableResponse") { name kind } '
+        '  parseError: __type(name: "ParseError") { name kind } '
+        '  shopifyqlResponse: __type(name: "ShopifyqlResponse") { name kind } '
+        '  shopifyQLResponse: __type(name: "ShopifyQLResponse") { name kind } '
+        '  tableData: __type(name: "TableData") { name kind } '
         "}"
     )
     print(json.dumps(graphql(shop, token, introspect_types, api_version), indent=2)[:1000])
 
     print("\n--- introspection: shopifyqlQuery field's return type ---")
     field_type = (
-        "{ __type(name: \"QueryRoot\") { "
+        '{ __type(name: "QueryRoot") { '
         "  fields { name type { name kind ofType { name kind } } } "
         "} }"
     )
     fields_resp = graphql(shop, token, field_type, api_version)
     fields = ((fields_resp.get("data") or {}).get("__type") or {}).get("fields") or []
     sql_field = next((f for f in fields if "shopifyql" in f["name"].lower()), None)
-    print(json.dumps(sql_field, indent=2) if sql_field else "(no field with 'shopifyql' in QueryRoot)")
+    print(
+        json.dumps(sql_field, indent=2) if sql_field else "(no field with 'shopifyql' in QueryRoot)"
+    )
 
     print("\n--- introspection: types matching 'shopifyql', 'table', 'tabular', 'sql' ---")
-    types_resp = graphql(
-        shop, token, "{ __schema { types { name kind } } }", api_version
-    )
-    types_list = (
-        ((types_resp.get("data") or {}).get("__schema") or {}).get("types") or []
-    )
+    types_resp = graphql(shop, token, "{ __schema { types { name kind } } }", api_version)
+    types_list = ((types_resp.get("data") or {}).get("__schema") or {}).get("types") or []
     needles = ("shopifyql", "tabular", "tablerow", "tabledata", "tableresponse", "parseerror")
     for t in types_list:
         n = t["name"]
@@ -186,14 +184,14 @@ def main() -> int:
     print("\n--- introspection: ShopifyqlQueryResponse fields ---")
     for tname in ("ShopifyqlQueryResponse", "ShopifyqlTableData", "ShopifyqlTableDataColumn"):
         q = (
-            "{ __type(name: \"" + tname + "\") { "
+            '{ __type(name: "' + tname + '") { '
             "  name kind "
             "  fields { name type { name kind ofType { name kind ofType { name kind } } } } "
             "} }"
         )
         resp = graphql(shop, token, q, api_version)
         print(f"\n{tname}:")
-        print(json.dumps(((resp.get('data') or {}).get('__type') or {}), indent=2)[:1500])
+        print(json.dumps(((resp.get("data") or {}).get("__type") or {}), indent=2)[:1500])
 
     print("=" * 78)
     for label, qstr in VARIATIONS:

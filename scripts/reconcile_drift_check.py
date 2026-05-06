@@ -60,7 +60,7 @@ def _count_order_webhooks(store_id: int, since: datetime) -> int:
         )
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0912, PLR0915 — linear nightly script; splitting hurts readability
     app = create_app()
     svc = app.extensions.get("sync_service")
     if svc is None:

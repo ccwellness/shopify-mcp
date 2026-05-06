@@ -192,6 +192,7 @@ def test_blueprints_call_services_not_repositories() -> None:
     )
     vs = _violations(files, banned)
     assert not vs, _format(
-        "L5 Blueprints must go through services, not import sqlalchemy / db / repositories directly.",
+        "L5 Blueprints must go through services — "
+        "no direct sqlalchemy / db / repositories imports.",
         vs,
     )
