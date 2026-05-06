@@ -27,6 +27,7 @@ from app.db.engine import get_session_factory
 from app.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.domain.repositories import UnitOfWork
 from app.jobs.queue import InlineJobQueue
+from app.services.order_query import OrderQueryService
 from app.services.sync import SyncService
 from app.services.webhook_ingest import WebhookIngestService
 from app.shopify.bulk import BulkOperationsClient
@@ -70,6 +71,11 @@ class Container(containers.DeclarativeContainer):
     bulk_client = providers.Singleton(BulkOperationsClient, shopify_client)
 
     # ---- L4 Services -----------------------------------------------------
+    order_query_service = providers.Factory(
+        OrderQueryService,
+        uow_factory=uow_factory,
+    )
+
     webhook_ingest_service = providers.Factory(
         WebhookIngestService,
         uow_factory=uow_factory,

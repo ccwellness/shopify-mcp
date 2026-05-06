@@ -11,6 +11,7 @@ import os
 
 from flask import Flask
 
+from app.blueprints.api import bp as api_bp
 from app.blueprints.webhooks import bp as webhooks_bp
 from app.cli import shopify_cli, sync_cli
 from app.container import Container
@@ -27,6 +28,7 @@ def create_app(*, container: Container | None = None) -> Flask:
     app.extensions["store_configs"] = configs
     app.extensions["job_queue"] = container.job_queue()
     app.extensions["webhook_ingest"] = container.webhook_ingest_service()
+    app.extensions["order_query_service"] = container.order_query_service()
 
     # Shopify-facing services are only wired if at least one store has real
     # creds — keeps tests / dev-without-`.env` paths working.
@@ -36,6 +38,7 @@ def create_app(*, container: Container | None = None) -> Flask:
         app.extensions["sync_service"] = container.sync_service()
 
     app.register_blueprint(webhooks_bp)
+    app.register_blueprint(api_bp)
     app.cli.add_command(sync_cli)
     app.cli.add_command(shopify_cli)
     return app
