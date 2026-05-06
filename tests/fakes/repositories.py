@@ -21,6 +21,10 @@ from itertools import count
 from app.domain.enums import FinancialStatus, SyncResource, WebhookProcessingStatus
 from app.domain.models import (
     AnalyticsKpiDay,
+    ApiAuditLogEntry,
+    ApiAuditLogId,
+    ApiToken,
+    ApiTokenId,
     Customer,
     CustomerId,
     InventoryItem,
@@ -88,7 +92,11 @@ class InMemoryDatabase:
     kpi_day: dict[tuple[StoreId, date], AnalyticsKpiDay] = field(default_factory=dict)
     sync_state: dict[tuple[StoreId, SyncResource], SyncStateRow] = field(default_factory=dict)
     webhook_events: dict[int, _WebhookEventState] = field(default_factory=dict)
+    api_tokens: dict[ApiTokenId, ApiToken] = field(default_factory=dict)
+    api_audit_log: list[ApiAuditLogEntry] = field(default_factory=list)
     _webhook_id_seq: count[int] = field(default_factory=lambda: count(1))
+    _api_token_id_seq: count[int] = field(default_factory=lambda: count(1))
+    _audit_log_id_seq: count[int] = field(default_factory=lambda: count(1))
 
 
 def _store_match(store_id: StoreId, allowed: tuple[StoreId, ...] | None) -> bool:
@@ -561,3 +569,111 @@ class InMemoryWebhookEventLogRepository:
             return
         row.processing_status = WebhookProcessingStatus.FAILED
         row.error = error
+
+
+# ---------------------------------------------------------------------------
+# API tokens
+# ---------------------------------------------------------------------------
+
+
+class InMemoryApiTokenRepository:
+    def __init__(self, db: InMemoryDatabase) -> None:
+        self._db = db
+
+    def get_by_hash(self, token_hash: str) -> ApiToken | None:
+        for tok in self._db.api_tokens.values():
+            if tok.token_hash == token_hash:
+                return tok
+        return None
+
+    def list_active(self) -> tuple[ApiToken, ...]:
+        return tuple(t for t in self._db.api_tokens.values() if t.revoked_at is None)
+
+    def upsert(self, token: ApiToken) -> ApiTokenId:
+        # If a row with this hash exists, replace it. Otherwise assign a new id.
+        for existing in self._db.api_tokens.values():
+            if existing.token_hash == token.token_hash:
+                self._db.api_tokens[existing.id] = ApiToken(
+                    id=existing.id,
+                    name=token.name,
+                    token_hash=token.token_hash,
+                    store_id=token.store_id,
+                    created_at=existing.created_at,
+                    expires_at=token.expires_at,
+                    revoked_at=token.revoked_at,
+                    last_used_at=token.last_used_at,
+                )
+                return existing.id
+        new_id = ApiTokenId(next(self._db._api_token_id_seq))  # noqa: SLF001
+        self._db.api_tokens[new_id] = ApiToken(
+            id=new_id,
+            name=token.name,
+            token_hash=token.token_hash,
+            store_id=token.store_id,
+            created_at=token.created_at,
+            expires_at=token.expires_at,
+            revoked_at=token.revoked_at,
+            last_used_at=token.last_used_at,
+        )
+        return new_id
+
+    def touch_last_used(self, token_id: ApiTokenId, when: datetime) -> None:
+        existing = self._db.api_tokens.get(token_id)
+        if existing is None:
+            return
+        self._db.api_tokens[token_id] = ApiToken(
+            id=existing.id,
+            name=existing.name,
+            token_hash=existing.token_hash,
+            store_id=existing.store_id,
+            created_at=existing.created_at,
+            expires_at=existing.expires_at,
+            revoked_at=existing.revoked_at,
+            last_used_at=when,
+        )
+
+    def revoke(self, token_id: ApiTokenId, when: datetime) -> None:
+        existing = self._db.api_tokens.get(token_id)
+        if existing is None:
+            return
+        self._db.api_tokens[token_id] = ApiToken(
+            id=existing.id,
+            name=existing.name,
+            token_hash=existing.token_hash,
+            store_id=existing.store_id,
+            created_at=existing.created_at,
+            expires_at=existing.expires_at,
+            revoked_at=when,
+            last_used_at=existing.last_used_at,
+        )
+
+
+# ---------------------------------------------------------------------------
+# API audit log
+# ---------------------------------------------------------------------------
+
+
+class InMemoryApiAuditLogRepository:
+    def __init__(self, db: InMemoryDatabase) -> None:
+        self._db = db
+
+    def record(self, entry: ApiAuditLogEntry) -> None:
+        # Assign an id if the caller passed 0 / a placeholder.
+        new_id = ApiAuditLogId(next(self._db._audit_log_id_seq))  # noqa: SLF001
+        self._db.api_audit_log.append(
+            ApiAuditLogEntry(
+                id=new_id,
+                ts=entry.ts,
+                caller_identity=entry.caller_identity,
+                store_id=entry.store_id,
+                surface=entry.surface,
+                route_or_tool=entry.route_or_tool,
+                params_sanitized=entry.params_sanitized,
+                status_code=entry.status_code,
+                latency_ms=entry.latency_ms,
+                request_id=entry.request_id,
+            )
+        )
+
+    def list_recent(self, *, limit: int = 100) -> tuple[ApiAuditLogEntry, ...]:
+        return tuple(reversed(self._db.api_audit_log))[:limit]

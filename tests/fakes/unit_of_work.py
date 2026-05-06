@@ -17,6 +17,8 @@ from typing import Self
 from app.domain.repositories import UnitOfWork
 from tests.fakes.repositories import (
     InMemoryAnalyticsRepository,
+    InMemoryApiAuditLogRepository,
+    InMemoryApiTokenRepository,
     InMemoryCustomerRepository,
     InMemoryDatabase,
     InMemoryInventoryRepository,
@@ -45,6 +47,8 @@ class InMemoryUnitOfWork:
         self.analytics = InMemoryAnalyticsRepository(db)
         self.sync_state = InMemorySyncStateRepository(db)
         self.webhook_events = InMemoryWebhookEventLogRepository(db)
+        self.api_tokens = InMemoryApiTokenRepository(db)
+        self.api_audit_log = InMemoryApiAuditLogRepository(db)
 
     def __enter__(self) -> Self:
         return self

@@ -54,6 +54,8 @@ OrderId = NewType("OrderId", int)
 OrderLineItemId = NewType("OrderLineItemId", int)
 FulfillmentId = NewType("FulfillmentId", int)
 SubscriptionContractId = NewType("SubscriptionContractId", int)
+ApiTokenId = NewType("ApiTokenId", int)
+ApiAuditLogId = NewType("ApiAuditLogId", int)
 
 Money = Decimal
 
@@ -352,3 +354,38 @@ class SyncStateRow:
     last_error: str | None
     last_error_at: datetime | None
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# API auth + audit (TR-4, TR-6)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ApiToken:
+    """Stored bearer-token record. `token_hash` is SHA-256 of the plaintext."""
+
+    id: ApiTokenId
+    name: str
+    token_hash: str
+    store_id: StoreId | None
+    created_at: datetime
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    last_used_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ApiAuditLogEntry:
+    """One inbound API or MCP call. Append-only."""
+
+    id: ApiAuditLogId
+    ts: datetime
+    caller_identity: str
+    store_id: StoreId | None
+    surface: str  # ApiSurface value
+    route_or_tool: str
+    params_sanitized: dict[str, object] | None
+    status_code: int | None
+    latency_ms: int | None
+    request_id: str | None

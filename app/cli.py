@@ -7,6 +7,9 @@ Registered onto the app via `app.cli.add_command(...)` in `create_app`.
   $ flask sync orders --store lubelife --since-days 2
   $ flask shopify register-webhooks          # register webhooks for every store
   $ flask shopify register-webhooks --store lubelife --base-url https://x.trycloudflare.com
+  $ flask api mint-token --name=ops-readonly
+  $ flask api list-tokens
+  $ flask api revoke-token --id=42
 """
 
 from __future__ import annotations
@@ -18,12 +21,15 @@ import click
 from flask import current_app
 from flask.cli import AppGroup
 
+from app.domain.models import ApiTokenId, StoreId
+from app.services.auth import AuthService
 from app.services.sync import SyncService
 from app.shopify import webhook_admin
 from app.shopify.client import ShopifyClient
 
 sync_cli = AppGroup("sync", help="Sync data from Shopify into Postgres.")
 shopify_cli = AppGroup("shopify", help="Manage Shopify-side resources (webhooks, etc.).")
+api_cli = AppGroup("api", help="Manage internal API bearer tokens (TR-4).")
 
 
 def _service() -> SyncService:
@@ -125,6 +131,69 @@ def sync_inventory_cmd(store_key: str) -> None:
     svc = _service()
     result = svc.sync_inventory(store_key)
     click.echo(f"{result.store_key}: {result.upserted} inventory items upserted")
+
+
+def _auth_service() -> AuthService:
+    svc = current_app.extensions.get("auth_service")
+    if svc is None:
+        raise click.ClickException("auth_service is not wired on this app")
+    return svc  # type: ignore[no-any-return]
+
+
+@api_cli.command("mint-token")
+@click.option("--name", required=True, help="Human-readable label (e.g. 'ops-readonly').")
+@click.option(
+    "--store-id",
+    type=int,
+    default=None,
+    help="Optional per-store scoping; omit for cross-store access.",
+)
+@click.option(
+    "--expires-days",
+    type=int,
+    default=None,
+    help="Optional expiry in days from now; omit for non-expiring.",
+)
+def mint_token_cmd(name: str, store_id: int | None, expires_days: int | None) -> None:
+    """Mint a new bearer token. Plaintext is printed once and never recoverable."""
+    expires_at = (
+        datetime.now(tz=UTC) + timedelta(days=expires_days) if expires_days is not None else None
+    )
+    token, plaintext = _auth_service().mint(
+        name=name,
+        store_id=StoreId(store_id) if store_id is not None else None,
+        expires_at=expires_at,
+    )
+    click.secho("Token minted. Save the plaintext NOW — it will not be shown again.", fg="yellow")
+    click.echo(f"  id:         {int(token.id)}")
+    click.echo(f"  name:       {token.name}")
+    click.echo(f"  store_id:   {token.store_id}")
+    click.echo(f"  expires_at: {token.expires_at}")
+    click.secho(f"  TOKEN:      {plaintext}", fg="green", bold=True)
+
+
+@api_cli.command("list-tokens")
+def list_tokens_cmd() -> None:
+    """List active (non-revoked) tokens."""
+    tokens = _auth_service().list_active()
+    if not tokens:
+        click.echo("No active tokens.")
+        return
+    click.echo(f"{'id':<6} {'name':<24} {'store_id':<10} {'expires_at':<28} last_used_at")
+    click.echo("-" * 90)
+    for t in tokens:
+        click.echo(
+            f"{int(t.id):<6} {t.name:<24} {str(t.store_id):<10} "
+            f"{str(t.expires_at):<28} {t.last_used_at}"
+        )
+
+
+@api_cli.command("revoke-token")
+@click.option("--id", "token_id", required=True, type=int, help="Token id from list-tokens.")
+def revoke_token_cmd(token_id: int) -> None:
+    """Revoke a token by id. Subsequent requests with it return 401."""
+    _auth_service().revoke(ApiTokenId(token_id))
+    click.echo(f"Token {token_id} revoked.")
 
 
 def _shopify_client() -> ShopifyClient:

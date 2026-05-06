@@ -27,6 +27,9 @@ from typing import Protocol, runtime_checkable
 from app.domain.enums import FinancialStatus, SyncResource
 from app.domain.models import (
     AnalyticsKpiDay,
+    ApiAuditLogEntry,
+    ApiToken,
+    ApiTokenId,
     Customer,
     CustomerId,
     InventoryItem,
@@ -218,6 +221,32 @@ class SyncStateRepository(Protocol):
 
 
 @runtime_checkable
+class ApiTokenRepository(Protocol):
+    """Bearer-token store (TR-4). Hashes are SHA-256 hex digests."""
+
+    def get_by_hash(self, token_hash: str) -> ApiToken | None: ...
+
+    def list_active(self) -> tuple[ApiToken, ...]: ...
+
+    def upsert(self, token: ApiToken) -> ApiTokenId:
+        """Insert or update; return the persisted id (newly assigned on insert)."""
+        ...
+
+    def touch_last_used(self, token_id: ApiTokenId, when: datetime) -> None: ...
+
+    def revoke(self, token_id: ApiTokenId, when: datetime) -> None: ...
+
+
+@runtime_checkable
+class ApiAuditLogRepository(Protocol):
+    """Append-only audit log (TR-6)."""
+
+    def record(self, entry: ApiAuditLogEntry) -> None: ...
+
+    def list_recent(self, *, limit: int = 100) -> tuple[ApiAuditLogEntry, ...]: ...
+
+
+@runtime_checkable
 class WebhookEventLogRepository(Protocol):
     """Operational log of every webhook delivery (TR-14).
 
@@ -270,6 +299,8 @@ class UnitOfWork(Protocol):
     analytics: AnalyticsRepository
     sync_state: SyncStateRepository
     webhook_events: WebhookEventLogRepository
+    api_tokens: ApiTokenRepository
+    api_audit_log: ApiAuditLogRepository
 
     def __enter__(self) -> UnitOfWork: ...
 

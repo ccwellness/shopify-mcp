@@ -7,6 +7,10 @@ can run with no DB connection at all.
 The `test_container` fixture builds a `Container` with the `uow_factory`
 and `job_queue` providers overridden to point at the fakes — useful for
 integration-shaped tests that exercise `create_app()` end-to-end.
+
+The `valid_token` / `auth_headers` / `authed_client` fixtures (used by
+contract tests) mint a real bearer token in the fake database and wire
+the test_client to send it on every request.
 """
 
 from __future__ import annotations
@@ -15,10 +19,14 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from dependency_injector import providers
+from flask import Flask
+from flask.testing import FlaskClient
 
+from app import create_app
 from app.container import Container
 from app.domain.repositories import UnitOfWork
 from app.jobs.queue import InlineJobQueue
+from app.services.auth import AuthService
 from tests.fakes import InMemoryDatabase, InMemoryUnitOfWork, make_uow_factory
 
 
@@ -51,3 +59,62 @@ def test_container(
     finally:
         container.unwire()
         container.reset_override()
+
+
+@pytest.fixture
+def app(test_container: Container) -> Flask:
+    """Flask app built from the test Container — usable by every contract test."""
+    return create_app(container=test_container)
+
+
+@pytest.fixture
+def valid_token(fake_uow_factory: Callable[[], UnitOfWork]) -> str:
+    """Mint a fresh bearer token in the fake DB and return the plaintext."""
+    auth = AuthService(fake_uow_factory)
+    _, plaintext = auth.mint(name="contract-tests")
+    return plaintext
+
+
+@pytest.fixture
+def auth_headers(valid_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {valid_token}"}
+
+
+class _AuthedFlaskClient(FlaskClient):
+    """Test client that auto-attaches the per-test bearer token."""
+
+    _bearer: str = ""
+
+    def open(self, *args: object, **kwargs: object) -> object:  # type: ignore[override]
+        headers = kwargs.get("headers")
+        if isinstance(headers, dict) and "Authorization" not in headers:
+            kwargs["headers"] = {
+                **headers,
+                "Authorization": f"Bearer {self._bearer}",
+            }
+        elif headers is None:
+            kwargs["headers"] = {"Authorization": f"Bearer {self._bearer}"}
+        return super().open(*args, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def authed_client(app: Flask, valid_token: str) -> Iterator[FlaskClient]:
+    """Flask test_client that attaches a valid bearer on every request."""
+    original_class = app.test_client_class
+
+    class _PerTestClient(_AuthedFlaskClient):
+        _bearer = valid_token
+
+    app.test_client_class = _PerTestClient
+    try:
+        with app.test_client() as c:
+            yield c
+    finally:
+        app.test_client_class = original_class
+
+
+@pytest.fixture
+def unauthed_client(app: Flask) -> Iterator[FlaskClient]:
+    """Plain test_client with no auth — for negative-path tests."""
+    with app.test_client() as c:
+        yield c

@@ -12,6 +12,8 @@ import pytest
 
 from app.domain.repositories import (
     AnalyticsRepository,
+    ApiAuditLogRepository,
+    ApiTokenRepository,
     CustomerRepository,
     InventoryRepository,
     LocationRepository,
@@ -78,3 +80,11 @@ def test_sync_state_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
 
 def test_webhook_event_log_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
     assert isinstance(uow.webhook_events, WebhookEventLogRepository)
+
+
+def test_api_token_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
+    assert isinstance(uow.api_tokens, ApiTokenRepository)
+
+
+def test_api_audit_log_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
+    assert isinstance(uow.api_audit_log, ApiAuditLogRepository)

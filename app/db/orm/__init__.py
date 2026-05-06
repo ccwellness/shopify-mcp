@@ -8,6 +8,8 @@ domain dataclasses in `app.domain.models` before returning.
 from __future__ import annotations
 
 from app.db.orm.analytics import AnalyticsKpiDayRow, SessionsDayRow
+from app.db.orm.api_audit_log import ApiAuditLogRow
+from app.db.orm.api_token import ApiTokenRow
 from app.db.orm.base import Base
 from app.db.orm.customer import CustomerRow
 from app.db.orm.inventory import InventoryItemRow, InventoryLevelRow
@@ -26,6 +28,8 @@ from app.db.orm.webhook_event import WebhookEventRow
 
 __all__ = [
     "AnalyticsKpiDayRow",
+    "ApiAuditLogRow",
+    "ApiTokenRow",
     "Base",
     "CustomerRow",
     "FulfillmentRow",

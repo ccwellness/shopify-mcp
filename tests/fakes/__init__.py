@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from tests.fakes.repositories import (
     InMemoryAnalyticsRepository,
+    InMemoryApiAuditLogRepository,
+    InMemoryApiTokenRepository,
     InMemoryCustomerRepository,
     InMemoryDatabase,
     InMemoryInventoryRepository,
@@ -28,6 +30,8 @@ from tests.fakes.unit_of_work import InMemoryUnitOfWork, make_uow_factory
 
 __all__ = [
     "InMemoryAnalyticsRepository",
+    "InMemoryApiAuditLogRepository",
+    "InMemoryApiTokenRepository",
     "InMemoryCustomerRepository",
     "InMemoryDatabase",
     "InMemoryInventoryRepository",

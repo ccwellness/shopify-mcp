@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.repositories import (
     AnalyticsRepository,
+    ApiAuditLogRepository,
+    ApiTokenRepository,
     CustomerRepository,
     InventoryRepository,
     LocationRepository,
@@ -32,6 +34,8 @@ from app.domain.repositories import (
     WebhookEventLogRepository,
 )
 from app.repositories.analytics import SqlAlchemyAnalyticsRepository
+from app.repositories.api_audit_log import SqlAlchemyApiAuditLogRepository
+from app.repositories.api_tokens import SqlAlchemyApiTokenRepository
 from app.repositories.customers import SqlAlchemyCustomerRepository
 from app.repositories.inventory import SqlAlchemyInventoryRepository
 from app.repositories.locations import SqlAlchemyLocationRepository
@@ -63,6 +67,8 @@ class SqlAlchemyUnitOfWork:
         self.analytics: AnalyticsRepository
         self.sync_state: SyncStateRepository
         self.webhook_events: WebhookEventLogRepository
+        self.api_tokens: ApiTokenRepository
+        self.api_audit_log: ApiAuditLogRepository
 
     def __enter__(self) -> Self:
         self._session = self._session_factory()
@@ -76,6 +82,8 @@ class SqlAlchemyUnitOfWork:
         self.analytics = SqlAlchemyAnalyticsRepository(self._session)
         self.sync_state = SqlAlchemySyncStateRepository(self._session)
         self.webhook_events = SqlAlchemyWebhookEventLogRepository(self._session)
+        self.api_tokens = SqlAlchemyApiTokenRepository(self._session)
+        self.api_audit_log = SqlAlchemyApiAuditLogRepository(self._session)
         return self
 
     def __exit__(

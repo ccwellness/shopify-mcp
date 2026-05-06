@@ -7,17 +7,13 @@ path (parsing, service, serialization) without touching Postgres.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
 
 import pytest
-from flask import Flask
 from flask.testing import FlaskClient
 
-from app import create_app
-from app.container import Container
 from app.domain.enums import (
     FinancialStatus,
     FulfillmentStatus,
@@ -99,17 +95,6 @@ def _order(
 
 
 @pytest.fixture
-def app(test_container: Container) -> Flask:
-    return create_app(container=test_container)
-
-
-@pytest.fixture
-def client(app: Flask) -> Iterator[FlaskClient]:
-    with app.test_client() as c:
-        yield c
-
-
-@pytest.fixture
 def seed(fake_uow: UnitOfWork) -> UnitOfWork:
     with fake_uow as uow:
         uow.orders.upsert(_order(id=1, processed_at=T0))
@@ -129,14 +114,14 @@ def seed(fake_uow: UnitOfWork) -> UnitOfWork:
 # ---------------------------------------------------------------------------
 
 
-def test_list_orders_empty(client: FlaskClient) -> None:
-    resp = client.get("/api/v1/orders")
+def test_list_orders_empty(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/orders")
     assert resp.status_code == HTTPStatus.OK
     assert resp.get_json() == {"items": [], "next_cursor": None, "limit": DEFAULT_LIMIT}
 
 
-def test_list_orders_returns_seeded(client: FlaskClient, seed: UnitOfWork) -> None:
-    resp = client.get("/api/v1/orders")
+def test_list_orders_returns_seeded(authed_client: FlaskClient, seed: UnitOfWork) -> None:
+    resp = authed_client.get("/api/v1/orders")
     assert resp.status_code == HTTPStatus.OK
     body = resp.get_json()
     ids = [item["id"] for item in body["items"]]
@@ -145,35 +130,39 @@ def test_list_orders_returns_seeded(client: FlaskClient, seed: UnitOfWork) -> No
     assert body["limit"] == DEFAULT_LIMIT
 
 
-def test_list_orders_serializes_money_as_string(client: FlaskClient, seed: UnitOfWork) -> None:
-    resp = client.get("/api/v1/orders")
+def test_list_orders_serializes_money_as_string(
+    authed_client: FlaskClient, seed: UnitOfWork
+) -> None:
+    resp = authed_client.get("/api/v1/orders")
     body = resp.get_json()
     assert body["items"][0]["total_price"] == "21.98"  # Decimal → str
     assert body["items"][0]["financial_status"] in {"paid", "pending"}  # StrEnum value
 
 
-def test_list_orders_filters_by_store_id(client: FlaskClient, seed: UnitOfWork) -> None:
-    resp = client.get(f"/api/v1/orders?store_id={int(LUBELIFE)}")
+def test_list_orders_filters_by_store_id(authed_client: FlaskClient, seed: UnitOfWork) -> None:
+    resp = authed_client.get(f"/api/v1/orders?store_id={int(LUBELIFE)}")
     body = resp.get_json()
     assert {item["store_id"] for item in body["items"]} == {int(LUBELIFE)}
     assert [item["id"] for item in body["items"]] == [2, 1]
 
 
-def test_list_orders_cross_store_filter(client: FlaskClient, seed: UnitOfWork) -> None:
-    resp = client.get(f"/api/v1/orders?store_id={int(LUBELIFE)}&store_id={int(SHOPJO)}")
+def test_list_orders_cross_store_filter(authed_client: FlaskClient, seed: UnitOfWork) -> None:
+    resp = authed_client.get(f"/api/v1/orders?store_id={int(LUBELIFE)}&store_id={int(SHOPJO)}")
     body = resp.get_json()
     assert len(body["items"]) == SEEDED_ORDER_COUNT
 
 
-def test_list_orders_filters_by_financial_status(client: FlaskClient, seed: UnitOfWork) -> None:
-    resp = client.get("/api/v1/orders?financial_status=paid")
+def test_list_orders_filters_by_financial_status(
+    authed_client: FlaskClient, seed: UnitOfWork
+) -> None:
+    resp = authed_client.get("/api/v1/orders?financial_status=paid")
     body = resp.get_json()
     assert {item["financial_status"] for item in body["items"]} == {"paid"}
 
 
-def test_list_orders_filters_by_since_until(client: FlaskClient, seed: UnitOfWork) -> None:
+def test_list_orders_filters_by_since_until(authed_client: FlaskClient, seed: UnitOfWork) -> None:
     # query_string urlencodes properly so the '+' in the offset survives.
-    resp = client.get(
+    resp = authed_client.get(
         "/api/v1/orders",
         query_string={
             "since": (T0 + timedelta(minutes=30)).isoformat(),
@@ -184,12 +173,12 @@ def test_list_orders_filters_by_since_until(client: FlaskClient, seed: UnitOfWor
     assert [item["id"] for item in body["items"]] == [2]
 
 
-def test_list_orders_paginates_via_cursor(client: FlaskClient, seed: UnitOfWork) -> None:
-    page1 = client.get("/api/v1/orders?limit=2").get_json()
+def test_list_orders_paginates_via_cursor(authed_client: FlaskClient, seed: UnitOfWork) -> None:
+    page1 = authed_client.get("/api/v1/orders?limit=2").get_json()
     assert [item["id"] for item in page1["items"]] == [3, 2]
     assert page1["next_cursor"] is not None
 
-    page2 = client.get(f"/api/v1/orders?limit=2&cursor={page1['next_cursor']}").get_json()
+    page2 = authed_client.get(f"/api/v1/orders?limit=2&cursor={page1['next_cursor']}").get_json()
     assert [item["id"] for item in page2["items"]] == [1]
     assert page2["next_cursor"] is None
 
@@ -199,31 +188,31 @@ def test_list_orders_paginates_via_cursor(client: FlaskClient, seed: UnitOfWork)
 # ---------------------------------------------------------------------------
 
 
-def test_list_orders_rejects_bad_financial_status(client: FlaskClient) -> None:
-    resp = client.get("/api/v1/orders?financial_status=banana")
+def test_list_orders_rejects_bad_financial_status(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/orders?financial_status=banana")
     assert resp.status_code == HTTPStatus.BAD_REQUEST
     assert "financial_status" in resp.get_json()["error"]
 
 
-def test_list_orders_rejects_non_integer_limit(client: FlaskClient) -> None:
-    resp = client.get("/api/v1/orders?limit=abc")
+def test_list_orders_rejects_non_integer_limit(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/orders?limit=abc")
     assert resp.status_code == HTTPStatus.BAD_REQUEST
     assert "limit" in resp.get_json()["error"]
 
 
-def test_list_orders_rejects_bad_since(client: FlaskClient) -> None:
-    resp = client.get("/api/v1/orders?since=not-a-date")
+def test_list_orders_rejects_bad_since(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/orders?since=not-a-date")
     assert resp.status_code == HTTPStatus.BAD_REQUEST
     assert "since" in resp.get_json()["error"]
 
 
-def test_list_orders_rejects_non_integer_store_id(client: FlaskClient) -> None:
-    resp = client.get("/api/v1/orders?store_id=not-an-int")
+def test_list_orders_rejects_non_integer_store_id(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/orders?store_id=not-an-int")
     assert resp.status_code == HTTPStatus.BAD_REQUEST
 
 
-def test_list_orders_rejects_bad_min_total(client: FlaskClient) -> None:
-    resp = client.get("/api/v1/orders?min_total=not-a-decimal")
+def test_list_orders_rejects_bad_min_total(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/orders?min_total=not-a-decimal")
     assert resp.status_code == HTTPStatus.BAD_REQUEST
 
 
@@ -232,8 +221,8 @@ def test_list_orders_rejects_bad_min_total(client: FlaskClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_order_returns_full_aggregate(client: FlaskClient, seed: UnitOfWork) -> None:
-    resp = client.get("/api/v1/orders/1")
+def test_get_order_returns_full_aggregate(authed_client: FlaskClient, seed: UnitOfWork) -> None:
+    resp = authed_client.get("/api/v1/orders/1")
     assert resp.status_code == HTTPStatus.OK
     body = resp.get_json()
     assert body["id"] == 1
@@ -241,7 +230,7 @@ def test_get_order_returns_full_aggregate(client: FlaskClient, seed: UnitOfWork)
     assert body["line_items"][0]["sku"] == "SKU-1"
 
 
-def test_get_order_404_for_missing(client: FlaskClient) -> None:
-    resp = client.get("/api/v1/orders/9999")
+def test_get_order_404_for_missing(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/orders/9999")
     assert resp.status_code == HTTPStatus.NOT_FOUND
     assert "not found" in resp.get_json()["error"]
