@@ -1,0 +1,108 @@
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+MANIFEST
+pip-wheel-metadata/
+
+# =============================================================================
+# Virtual envs
+# =============================================================================
+.venv/
+venv/
+env/
+.python-version
+
+# =============================================================================
+# uv
+# =============================================================================
+.uv/
+# uv.lock is committed for reproducible builds.
+
+# =============================================================================
+# Secrets — NEVER commit
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+
+# =============================================================================
+# Test / coverage / cache
+# =============================================================================
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# =============================================================================
+# Editors / IDEs
+# =============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# =============================================================================
+# OS
+# =============================================================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# =============================================================================
+# Project-specific
+# =============================================================================
+# Local ngrok / cloudflared metadata
+.cloudflared/
+.ngrok/
+
+# Bulk Operations downloads (JSONL exports from Shopify)
+data/bulk/
+*.jsonl
+
+# Webhook payload dumps (debugging only)
+data/webhooks/
+
+# Local Postgres data when running outside Docker
+pgdata/
+
+# Sphinx / docs build
+docs/_build/
+
+# Runtime logs (drift checks etc.) — keep the dir, drop the contents.
+logs/*
+!logs/.gitkeep
+
+# Claude Code per-machine state — settings.local.json is convention-named
+# for local-only overrides; the lock file is transient.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

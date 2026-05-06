@@ -1,0 +1,142 @@
+[project]
+name = "shopify_connector"
+version = "0.1.0"
+description = "Multi-store Shopify connector with REST, GraphQL, and MCP interfaces."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "CC Wellness" }]
+
+dependencies = [
+    # web
+    "flask>=3.0",
+    "werkzeug>=3.0",
+    "gunicorn>=22.0",
+
+    # persistence
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+
+    # http + graphql client
+    "httpx[http2]>=0.27",
+    "gql[httpx]>=3.5",
+
+    # serialization / typing
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+
+    # graphql server
+    "strawberry-graphql[flask]>=0.235",
+
+    # background work
+    "rq>=1.16",
+    "redis>=5.0",
+
+    # mcp
+    "fastmcp>=0.2",
+
+    # dependency injection
+    "dependency-injector>=4.41",
+
+    # observability
+    "structlog>=24.1",
+    "prometheus-client>=0.20",
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-instrumentation-flask>=0.46b0",
+
+    # third-party adapters (analytics fallback, subscriptions)
+    "google-analytics-data>=0.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "pytest-postgresql>=6.0",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.103",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pip-audit>=2.7",
+    "pre-commit>=3.7",
+    "respx>=0.21",
+]
+
+[project.scripts]
+shopify-connector = "app.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "mcp_server"]
+
+# ---------------------------------------------------------------------------
+# Ruff — formatter + linter. The TID rules below enforce the layered
+# architecture from design doc Section 11A.9. Violations block CI.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "TID",  # banned imports — see below
+    "UP",   # pyupgrade
+    "S",    # bandit (security)
+    "PT",   # pytest style
+    "PL",   # pylint subset
+]
+ignore = ["S101"]  # assert is fine in tests
+
+# Banned cross-layer imports — TR-25 enforcement.
+# `app.repositories.*` and `app.db.*` are the only modules allowed to import sqlalchemy.
+# `app.services.*` and `app.container` are the only modules allowed to import app.repositories.*.
+# Routes / MCP tools / templates may NOT import app.repositories.* or sqlalchemy.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"sqlalchemy".msg = "Only app.repositories.* and app.db.* may import sqlalchemy. Routes/MCP/services must use a repository protocol."
+"app.db".msg = "Only app.repositories.* may import app.db.*."
+
+[tool.ruff.lint.per-file-ignores]
+"app/repositories/**" = ["TID251"]   # repos may import sqlalchemy + app.db
+"app/db/**" = ["TID251"]             # db layer may import sqlalchemy
+"alembic/**" = ["TID251"]            # migrations need sqlalchemy
+"app/__init__.py" = ["TID251"]       # app factory bootstraps L1→L4 wiring (design 11A.7)
+"app/container.py" = ["TID251"]      # DI container is the canonical wiring point (when it lands)
+"scripts/**" = ["TID251"]            # dev smoke/operator scripts may inspect DB directly
+"tests/**" = ["TID251"]              # tests may import sqlalchemy + app.db for fixtures + assertions
+
+# ---------------------------------------------------------------------------
+# mypy — strict on app + mcp_server, relaxed on tests.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+markers = [
+    "integration: tests that require a live Postgres (deselect with '-m \"not integration\"')",
+    "e2e: end-to-end tests that hit a Shopify dev store",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:google.*",
+]

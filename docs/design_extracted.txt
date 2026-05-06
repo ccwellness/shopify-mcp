@@ -1,0 +1,866 @@
+DESIGN REQUIREMENTS
+Shopify Multi-Store Data Platform
+Python / Flask connector with REST + MCP interfaces for lubelife.com, shopjo.com, shopshibari.com
+Version 0.1 (Draft) · April 29, 2026
+
+1. Executive Summary
+This document specifies the design of an internal Python/Flask application that consolidates order, catalog, inventory, subscription, and analytics data from three Shopify stores — lubelife.com, shopjo.com, and shopshibari.com — into a single Postgres-backed system. The application exposes data through three consumption surfaces: an internal web dashboard, a REST/GraphQL API for other internal tools, and an MCP server that lets Claude (and other LLM agents) answer natural-language questions across the three stores.
+Authentication is handled via a Custom App provisioned in each store, granting a per-store Admin API access token. Data is kept fresh through a hybrid sync model: Shopify webhooks push order, inventory, and product events in near real time, while an on-demand fetch path falls back to live GraphQL queries when the local cache is stale or a query covers data that is not synced (e.g., ad-hoc historical reports). A nightly reconciliation job uses the Bulk Operations API to repair any events missed during webhook delivery failures.
+The design is portable: it runs on a single developer laptop with Postgres in Docker and a Cloudflare/ngrok tunnel for webhooks, but is structured (12-factor configuration, stateless web layer, environment-driven secrets) so it can be lifted into any cloud target without code changes when the team is ready.
+2. Goals and Non-Goals
+2.1 In Scope
+Pull and persist full order detail across all three stores: line items (units, SKU, item number), revenue (gross, net, tax, discount, shipping), shipping address, financial status, fulfillment status, processed-at, and order name.
+Pull and persist catalog data: products, variants, options, prices, media URLs, tags, status.
+Pull and persist inventory state at the InventoryItem × Location grain so multi-location stock can be reported.
+Pull and persist subscription contracts where the store uses Shopify's native subscription primitives, plus a documented adapter pattern for third-party subscription apps (Recharge, Skio, Bold, Awtomic).
+Surface session, visit, and conversion analytics through ShopifyQL where available, with a clearly documented fallback path to Google Analytics 4 / Shopify Admin reports.
+Expose all of the above through three interfaces: a Flask-based internal dashboard, a versioned REST + GraphQL API, and an MCP server callable from Claude desktop / Claude Code.
+Run cleanly on a developer laptop today; deploy to a generic container target tomorrow without code changes.
+2.2 Out of Scope (v1)
+Write-back operations against Shopify (order edits, inventory adjustments, refunds). v1 is read-only for safety; mutations are a v2 feature gated behind explicit per-tool authorization.
+Customer-facing storefront features. The Storefront API and Shopify's Storefront MCP are not used in this project; this is an internal Admin-side tool.
+BI/visualization tooling. Charts and dashboards in the Flask UI cover operational needs, but dedicated BI work (Looker, Metabase, Power BI) is downstream and connects to the same Postgres database.
+Replacement for Shopify's native admin UI. Operators continue to do day-to-day operations in Shopify; this app is for cross-store reporting and AI access.
+3. Stores and Discovery Items
+The three target stores are operationally similar but not necessarily identically configured. Several questions must be resolved during the discovery phase before implementation begins because they materially affect scope and rate-limit budgeting.
+Question
+Why it matters
+How to answer
+Is the store on Shopify Plus?
+Plus stores get 10x rate-limit headroom (10,000-pt bucket vs 1,000-pt) and access to ShopifyQL features that are otherwise unavailable.
+Check Settings → Plan in each store admin, or query the shop object.
+Which subscription app is installed?
+Determines whether subscriptions are read from Shopify's native SubscriptionContract or via a third-party API (Recharge, Skio, Bold, Awtomic).
+Inspect each store's installed apps; ask the store owner.
+How many locations per store?
+Drives inventory query volume and webhook subscription count.
+Query GraphQL `locations` connection.
+What analytics tooling is wired into each storefront?
+Determines whether GA4, Meta Pixel, or only Shopify's native analytics are available for sessions/visits if ShopifyQL coverage is insufficient.
+Inspect theme files; ask the marketing team.
+Volume profile (orders/day, SKUs, variants)?
+Sizes the bulk import and the daily reconciliation budget.
+One-time GraphQL count queries during discovery.
+4. Architecture Overview
+The system follows a classic ingest → store → serve layout, with three distinct serving surfaces sharing one persistence layer.
+4.1 Logical Diagram (text)
++----------------------+     +----------------------+     +----------------------+
+|  lubelife.myshopify  |     |   shopjo.myshopify   |     | shopshibari.myshop… |
++----------+-----------+     +----------+-----------+     +----------+-----------+
+           |  webhooks (HMAC-signed) + GraphQL Admin API (per-store token)
+           v                            v                            v
++---------------------------------------------------------------------------+
+|                         INGEST LAYER (Flask)                              |
+|  - /webhooks/<store>/<topic>  HMAC verify  enqueue to RQ/Celery           |
+|  - on-demand /admin GraphQL fetcher (gql + httpx)                         |
+|  - nightly bulk reconciliation (Bulk Operations API)                      |
++----------------------------+----------------------------------------------+
+                             |
+                             v
++---------------------------------------------------------------------------+
+|                       PERSISTENCE (Postgres)                              |
+|   schema per concern: orders, line_items, products, variants, inventory,  |
+|   inventory_levels, locations, customers, subscriptions, sessions_daily   |
+|   every row tagged with store_id (multi-tenant by row)                    |
++----------------------------+----------------------------------------------+
+                             |
+        +--------------------+--------------------+--------------------+
+        v                                         v                    v
++----------------+    +-------------------------------+   +-------------------+
+|  Internal UI   |    |   REST + GraphQL API (Flask) |    |   MCP Server      |
+|  (Flask + HTMX |    |   /api/v1/...                 |   |  (FastMCP, stdio  |
+|   or React)    |    |   /graphql                    |   |   and HTTP modes) |
++----------------+    +-------------------------------+   +-------------------+
+        |                            |                              |
+        v                            v                              v
+   internal team             other internal apps           Claude / Cursor / Copilot
+4.2 Component Responsibilities
+Ingest layer: Receives webhook deliveries, performs HMAC verification, enqueues work to a background worker. Also exposes a synchronous on-demand fetch service for queries against data the cache does not cover. Writes are mediated through repositories — the ingest code does not call the ORM directly.
+Persistence: Postgres database with a row-level `store_id` tenancy column on every table. Indexes on `(store_id, processed_at)`, `(store_id, sku)`, `(store_id, location_id)` for the most common access patterns.
+Data layer (repository pattern): All database access funnels through repository classes (one per aggregate: Order, Product, Variant, Inventory, Customer, Subscription, Location, Analytics). Repositories are the only layer that imports SQLAlchemy. They expose intent-revealing methods like `find_orders_in_window(store_id, since, until)` rather than letting callers write queries.
+Service layer: Use-case classes (e.g., `OrderQueryService`, `InventoryReportingService`, `SyncOrchestrator`) compose one or more repositories with the Shopify client. This is the only layer the dashboard, REST API, GraphQL gateway, and MCP server are allowed to call.
+Serving — Dashboard: Flask Blueprints rendering server-side HTML (HTMX recommended for simple, low-build UI; React optional). Calls into the service layer; never imports ORM models directly.
+Serving — API: Versioned REST endpoints under /api/v1/, plus a thin GraphQL gateway (Strawberry or Ariadne). Routes are thin: parse input, call a service, serialize output. Authentication via API tokens issued from a small admin UI.
+Serving — MCP: Separate process running FastMCP. Re-uses the exact same service layer as the REST API — there is no MCP-specific SQL. Supports both stdio (for local Claude desktop) and HTTP (for remote MCP clients) transports.
+Architectural rule
+Only repositories may touch SQLAlchemy. Only services may touch repositories. Routes, MCP tools, and templates only touch services. This is enforced by import lint (a small pre-commit check that grep-fails any forbidden import path) and is the core invariant of the codebase.
+5. Authentication and Authorization
+5.1 Custom App per Store
+Each of the three stores will host a Custom App. The app's Admin API access token is the credential used by this application's ingest and on-demand fetch layers.
+Important platform change — January 2026
+As of January 1, 2026, Shopify no longer allows new custom apps to be created from the Shopify Admin UI. New custom apps must be created via the Shopify Dev Dashboard or the Shopify CLI. Existing custom apps continue to function. If an app already exists in any of the three stores, keep using it; otherwise create the new app via the Dev Dashboard route.
+5.2 Required Access Scopes
+Following Shopify's principle of least privilege, the Custom App should request only the read scopes the application needs.
+Scope
+Purpose
+Notes
+read_orders
+Order objects within the last 60 days.
+Required.
+read_all_orders
+Order objects older than 60 days.
+Required for any historical reporting; merchant-granted on a custom app, no review needed.
+read_products
+Products and variants.
+Required.
+read_inventory
+InventoryItem and InventoryLevel data.
+Required for stock reporting.
+read_locations
+Location list (for multi-location inventory).
+Required.
+read_customers
+Customer records linked to orders.
+Required for customer-level reporting.
+read_fulfillments
+Fulfillment records and tracking.
+Required for shipped/in-transit reporting.
+read_shipping
+Shipping methods and rates.
+Required for shipping cost analysis.
+read_own_subscription_contracts
+Native Shopify subscription contracts.
+Only useful if the store uses Shopify Subscriptions or an app that writes to native contracts.
+read_analytics
+Some analytics surfaces.
+Conditional. Coverage is uneven; use ShopifyQL via Admin GraphQL where possible.
+5.3 Secret Storage
+Per-store access tokens are stored encrypted at rest. In local development, secrets live in a .env file (gitignored). In any deployed environment, secrets are pulled from the host's secret manager (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, or Render env vars) via a thin abstraction layer. The application must never log raw access tokens; logging middleware redacts any header named X-Shopify-Access-Token.
+5.4 Webhook HMAC Verification
+All incoming webhook requests are verified by computing HMAC-SHA256(body, app_shared_secret) and comparing to the X-Shopify-Hmac-Sha256 header using a constant-time compare (hmac.compare_digest). Verification happens before any other handler logic. Requests that fail verification return HTTP 401 and are not enqueued.
+5.5 Authorization for the Internal API and MCP
+Internal API: bearer-token authentication; tokens issued through a small Flask admin view, scoped to read-only by default and per-store optionally.
+MCP server (stdio): no network auth needed — the local OS user controls launch.
+MCP server (HTTP transport): bearer token in Authorization header, same token store as the REST API.
+Audit log: every API and MCP tool invocation is logged with caller identity, store, tool/route, and parameters (sanitized).
+6. Shopify API Surface
+6.1 Admin API — GraphQL First
+All new development uses the GraphQL Admin API. Per Shopify's October 2024 announcement, the REST Admin API is legacy, and as of April 2025 all new public apps must be GraphQL. Shopify continues to ship quarterly versions; as of this design's writing, 2026-04 is the latest stable release. The application pins to a specific quarter (e.g., 2026-04) and upgrades on a quarterly cadence.
+6.2 Rate Limits
+The GraphQL Admin API uses a cost-based leaky bucket. Each query reports `extensions.cost.actualQueryCost` and a `throttleStatus` block. The implementation must:
+Inspect throttleStatus on every response and back off when `currentlyAvailable` drops below a threshold (e.g., 100 points).
+Use exponential backoff with jitter on THROTTLED errors.
+Track per-store cost consumption in a Prometheus/StatsD counter so the team can see saturation early.
+Plan
+Bucket size
+Restore rate
+Standard / Advanced
+1,000 points
+50 points/sec
+Shopify Plus
+10,000 points
+500 points/sec
+6.3 Bulk Operations API
+For nightly full reconciliation and any historical backfill, the Bulk Operations API is used instead of paginated queries. Bulk queries run asynchronously, are not subject to per-query cost limits, and produce a JSONL file at a temporary URL. Constraints:
+Only one bulk operation per shop can run at a time — the scheduler must serialize.
+Output must be downloaded promptly; URLs expire.
+Bulk queries cannot use variables and have additional restrictions on connections and fragments.
+6.4 ShopifyQL for Analytics
+ShopifyQL is exposed via the GraphQL Admin API field `shopifyqlQuery`. It is the path to most session, visit, and conversion metrics that are otherwise only visible in the Shopify Admin Analytics UI. Available metrics include sessions, gross_sales, net_sales, orders, units_sold, customers, and revenue. Some metrics (average_order_value, conversion_rate, cart_abandonment_rate) cannot be ordered by time in cumulative calculations — these must be derived in application code.
+Coverage caveat
+ShopifyQL surface area has shifted multiple times since its preview. Some advanced features remain Plus-gated. Treat each metric the application depends on as a verification item: write a small probe query against each store and assert the result before relying on it in production code.
+6.5 Python Client Choice
+Recommendation: do not depend on shopify_python_api as the primary client. The package is still maintained but its GraphQL ergonomics lag the API and most of its surface area is REST-oriented. Instead, call the GraphQL endpoint directly with an HTTP client + GraphQL client:
+httpx for HTTP — supports HTTP/2, retries, async; the Flask app uses httpx in sync mode and the worker can use it async.
+gql (graphql-python/gql) for type-aware query construction and response validation.
+ariadne-codegen or sgqlc optional, for auto-generating Python types from Shopify's introspected schema.
+Endpoint pattern:
+POST https://{shop}.myshopify.com/admin/api/2026-04/graphql.json
+X-Shopify-Access-Token: {per-store token}
+Content-Type: application/json
+7. Data Model
+The Postgres schema is multi-tenant by row — every business table carries a `store_id` foreign key. This is simpler than schema-per-store and lets the application produce cross-store reports trivially while keeping per-store queries fast through compound indexes. Below is the high-level table list; column-level detail is left to the implementation phase.
+Table
+Source
+Grain
+Sync mechanism
+stores
+config
+one row per store
+static
+locations
+GraphQL
+store × location
+webhook + nightly bulk
+products
+GraphQL
+store × product
+products/* webhooks + nightly bulk
+variants
+GraphQL
+store × variant
+products/* webhooks + nightly bulk
+inventory_items
+GraphQL
+store × inventory_item
+nightly bulk
+inventory_levels
+GraphQL
+store × item × location
+inventory_levels/update webhook
+customers
+GraphQL
+store × customer
+customers/* webhooks + nightly bulk
+orders
+GraphQL
+store × order
+orders/* webhooks + nightly bulk
+order_line_items
+GraphQL
+order × line
+denormalized at order ingest
+order_shipping_addresses
+GraphQL
+order
+denormalized at order ingest
+fulfillments
+GraphQL
+order × fulfillment
+fulfillments/* webhooks
+subscription_contracts
+GraphQL or 3rd-party
+store × contract
+polling or app-specific webhooks
+sessions_daily
+ShopifyQL or GA4
+store × date
+nightly job
+analytics_kpi_daily
+derived
+store × date
+nightly job
+sync_state
+internal
+store × resource
+every sync run
+webhook_events_log
+internal
+one row per webhook delivery
+every webhook
+api_audit_log
+internal
+one row per API/MCP call
+every call
+Money columns are stored as numeric(19,4) in shop currency, with separate columns where presentment currency differs. Identifiers from Shopify are stored as their full GID (e.g., gid://shopify/Order/12345) plus a parsed numeric column for sort/range performance.
+8. Sync Strategy
+The system blends three sync mechanisms so each plays to its strength.
+8.1 Webhooks (primary, near real-time)
+Subscribed topics:
+Topic
+Purpose
+orders/create
+New order arrived.
+orders/updated
+Order modified (status, line items, address).
+orders/paid
+Payment captured — useful for revenue recognition.
+orders/cancelled
+Order voided.
+orders/fulfilled
+Order shipped.
+fulfillments/create, fulfillments/update
+Fulfillment events.
+products/create, products/update, products/delete
+Catalog changes.
+inventory_levels/update
+Stock level changes at any location.
+customers/create, customers/update
+Customer records.
+app/uninstalled
+Defensive — clean up tokens and pause the store.
+Webhook handler flow:
+HTTPS POST to /webhooks/<store_slug>/<topic>
+Read raw body (do not parse before HMAC verification).
+Verify X-Shopify-Hmac-Sha256 with constant-time compare.
+Persist a `webhook_events_log` row with the raw payload (compressed).
+Enqueue an async job; respond 200 immediately. The 5-second response budget Shopify enforces is the most common failure mode of webhook handlers — do real work in the worker.
+Worker dequeues, normalizes the payload, and upserts into the relevant tables.
+8.2 On-demand GraphQL fetch (synchronous fallback)
+When the API or MCP receives a request for data the cache does not cover, or when a freshness flag in the request demands live data, the on-demand fetcher queries Shopify GraphQL directly. Results are written through to the cache to warm subsequent reads.
+8.3 Nightly bulk reconciliation
+Once per day, per store, the application launches a Bulk Operation that exports all orders modified in the last 48 hours plus a full snapshot of inventory levels. The output is reconciled against the cache to repair any rows that were missed due to webhook delivery failures (Shopify retries webhooks but eventually gives up after ~48 hours). This is the ground-truth reconciliation step that makes webhook-only sync trustable.
+Why both webhooks and on-demand?
+Webhooks alone are unreliable enough that production users do not trust them as the sole source. Bulk + nightly reconciliation closes the gap. On-demand is for ad-hoc queries that fall outside the synced surface (e.g., 'show me every order across all three stores from a specific date 18 months ago, including raw note attributes').
+9. Analytics: Sessions, Visits, Conversion
+Sessions, visits, and conversion are the most operationally important metrics that are not first-class objects in the Admin API. The application implements them in tiers.
+9.1 Tier 1 — ShopifyQL via Admin GraphQL
+Where ShopifyQL exposes the metric, query it nightly and write a row per store × day to `sessions_daily`. Sample query (executed via the `shopifyqlQuery` field):
+{
+  shopifyqlQuery(query: "FROM sales SHOW sessions, total_sales, orders SINCE -1d UNTIL -1d") {
+    ... on TableResponse {
+      tableData {
+        rowData
+        columns { name dataType }
+      }
+    }
+    ... on ParseError { code message }
+  }
+}
+9.2 Tier 2 — Google Analytics 4 fallback
+If ShopifyQL coverage is insufficient or a metric is Plus-gated and the store is not on Plus, the application pulls sessions and conversion from the GA4 Data API for the property attached to that store. This requires a service-account credential per store; the discovery phase identifies whether GA4 is wired into each storefront.
+9.3 Tier 3 — Computed metrics
+Conversion rate, average order value, and other ratios are computed in the application from the lower-level metrics rather than queried, both because Shopify itself blocks some of them from time-ordered queries and because the team needs identical formulas across all three stores.
+Discovery item
+Before committing to ShopifyQL as the analytics path, write a probe query against each store and confirm `sessions` returns non-empty data over a known recent window. If any store fails, that store falls back to GA4.
+10. Subscriptions
+Shopify supports subscriptions via two distinct pathways:
+Native: Apps that write to Shopify's `SubscriptionContract` GraphQL type. The Shopify Subscriptions app, Awtomic, and a growing number of others use this pathway. These appear directly in the Admin GraphQL API.
+Third-party (off-platform state): Apps such as Recharge historically store contracts in their own database and expose their own API. These do not appear in `SubscriptionContract` queries.
+10.1 Adapter Pattern
+The application defines a single `SubscriptionProvider` interface with two implementations: `NativeProvider` (queries `SubscriptionContract` via Admin GraphQL) and one or more `ThirdPartyProvider` implementations (e.g., `RechargeProvider`). Each store is configured with the provider that matches its installed app. Both implementations write to the same `subscription_contracts` table so downstream consumers (dashboard, API, MCP) are app-agnostic.
+Discovery item
+Identify which subscription app is installed in each of the three stores and which pathway it uses. This determines which provider implementation must be built first and whether additional credentials (e.g., a Recharge API token per store) are required.
+11. Application Architecture and Layout
+The application uses a layered architecture with the Repository pattern as the central data-access discipline. Layers are physically separated into distinct packages, and dependencies only flow downward — an upper layer may import from layers below it, never the reverse.
+11.1 Layered architecture
++--------------------------------------------------------------------------+
+|  LAYER 5  Presentation                                                   |
+|  app/blueprints/  (dashboard, api_v1, graphql, webhooks)                 |
+|  mcp_server/tools/                                                       |
+|  Thin: parse input, call services, serialize output. No business logic.  |
++--------------------------------+-----------------------------------------+
+                                 v
++--------------------------------------------------------------------------+
+|  LAYER 4  Application Services (use cases)                               |
+|  app/services/  OrderQueryService, InventoryReportingService,            |
+|                 SyncOrchestrator, AnalyticsService, etc.                 |
+|  Orchestrates repositories + ShopifyClient.                              |
+|  Owns transactions via UnitOfWork. Returns DTOs, not ORM rows.           |
++--------------------------------+-----------------------------------------+
+                                 v
++--------------------------------------------------------------------------+
+|  LAYER 3  Domain                                                         |
+|  app/domain/  pure-Python dataclasses (Order, LineItem, InventoryLevel,  |
+|               KPI, SubscriptionContract). Plus repository INTERFACES.    |
+|  No SQLAlchemy. No Flask. Importable in isolation.                       |
++--------------------------------+-----------------------------------------+
+                                 v
++--------------------------------------------------------------------------+
+|  LAYER 2  Data Access (Repositories)                                     |
+|  app/repositories/  SqlAlchemyOrderRepository,                           |
+|                     SqlAlchemyProductRepository, ...                     |
+|  Implements the interfaces from Layer 3. ONLY layer that imports         |
+|  SQLAlchemy. Returns domain objects, not ORM rows.                       |
++--------------------------------+-----------------------------------------+
+                                 v
++--------------------------------------------------------------------------+
+|  LAYER 1  Infrastructure                                                 |
+|  app/db/  SQLAlchemy engine, session, ORM models                         |
+|  app/shopify/  GraphQL client, webhooks, bulk runner, normalizers        |
+|  app/integrations/  GA4 client, Recharge client, etc.                    |
++--------------------------------------------------------------------------+
+Two key consequences fall out of this layout:
+The MCP server and the REST API call the exact same service classes — there is no parallel implementation of "how to look up orders." Add a method once, get it in both surfaces.
+Tests for the service layer use in-memory repository implementations (a thin dict-backed `InMemoryOrderRepository` etc.) and never touch Postgres. This makes the service-layer test suite fast and deterministic.
+11.2 File layout
+shopify_connector/
+├─ app/
+│  ├─ __init__.py              # create_app() factory, DI wiring
+│  ├─ config.py                # 12-factor config (env-driven)
+│  ├─ container.py             # dependency-injection container
+│  │
+│  ├─ domain/                  # LAYER 3 — pure Python, no I/O
+│  │   ├─ models.py            #   Order, LineItem, Product, Variant,
+│  │   │                       #   InventoryLevel, Customer, KPI, ...
+│  │   ├─ enums.py             #   FinancialStatus, FulfillmentStatus, ...
+│  │   └─ repositories.py      #   Protocol classes — repository INTERFACES
+│  │
+│  ├─ repositories/            # LAYER 2 — SQLAlchemy implementations
+│  │   ├─ base.py              #   AbstractRepository, UnitOfWork
+│  │   ├─ orders.py            #   SqlAlchemyOrderRepository
+│  │   ├─ products.py
+│  │   ├─ inventory.py
+│  │   ├─ customers.py
+│  │   ├─ subscriptions.py
+│  │   ├─ locations.py
+│  │   └─ analytics.py
+│  │
+│  ├─ services/                # LAYER 4 — use cases
+│  │   ├─ order_query.py       #   OrderQueryService
+│  │   ├─ inventory_report.py  #   InventoryReportingService
+│  │   ├─ analytics.py         #   AnalyticsService (orchestrates ShopifyQL + GA4)
+│  │   ├─ subscription.py      #   SubscriptionService
+│  │   ├─ sync_orchestrator.py #   webhook + on-demand + bulk reconciliation
+│  │   └─ store_compare.py     #   StoreComparisonService (cross-store KPIs)
+│  │
+│  ├─ db/                      # LAYER 1 — SQLAlchemy
+│  │   ├─ engine.py            #   create_engine, sessionmaker
+│  │   ├─ unit_of_work.py      #   UnitOfWork implementation
+│  │   └─ orm/                 #   ORM models (mapped to repositories' return types)
+│  │       ├─ order.py
+│  │       ├─ product.py
+│  │       └─ ...
+│  │
+│  ├─ shopify/                 # LAYER 1 — Shopify integration
+│  │   ├─ client.py            #   gql + httpx, retries, cost-aware throttling
+│  │   ├─ queries.py           #   versioned GraphQL documents
+│  │   ├─ bulk.py              #   Bulk Operations runner
+│  │   ├─ webhooks.py          #   HMAC verification, topic dispatch
+│  │   └─ normalizers.py       #   Shopify payload → domain object
+│  │
+│  ├─ integrations/            # LAYER 1 — third-party adapters
+│  │   ├─ ga4.py               #   GA4 Data API client (analytics fallback)
+│  │   ├─ recharge.py          #   Recharge subscription provider
+│  │   └─ skio.py              #   Skio provider
+│  │
+│  ├─ subscriptions/           # provider interface + dispatch
+│  │   ├─ base.py              #   SubscriptionProvider protocol
+│  │   ├─ native.py            #   reads native SubscriptionContract
+│  │   ├─ recharge.py          #   wraps integrations/recharge.py
+│  │   └─ resolver.py          #   per-store provider resolution
+│  │
+│  ├─ blueprints/              # LAYER 5 — Flask presentation
+│  │   ├─ dashboard/           #   /  internal HTML UI (HTMX)
+│  │   ├─ api_v1/              #   /api/v1/...  REST routes
+│  │   ├─ graphql/             #   /graphql  Strawberry resolvers
+│  │   └─ webhooks/            #   /webhooks/<store>/<topic>
+│  │
+│  ├─ jobs/                    # scheduled tasks (APScheduler / Celery beat)
+│  │   ├─ nightly_reconcile.py
+│  │   └─ analytics_pull.py
+│  │
+│  └─ cli.py                   # flask CLI: init-db, sync, register-webhooks
+│
+├─ mcp_server/                 # LAYER 5 — separate process
+│  ├─ __main__.py              # entrypoint (stdio or HTTP)
+│  ├─ server.py                # FastMCP server, DI bootstrap
+│  ├─ tools/                   # one file per tool group
+│  │   ├─ orders.py            #   list_orders, get_order, search_orders_*
+│  │   ├─ inventory.py
+│  │   ├─ catalog.py
+│  │   ├─ analytics.py
+│  │   └─ subscriptions.py
+│  └─ schemas.py               # pydantic models for tool I/O
+│
+├─ tests/
+│  ├─ unit/                    # service tests with InMemory repositories
+│  ├─ integration/             # repository tests against Postgres
+│  └─ contract/                # presentation-layer tests (HTTP, MCP)
+│
+├─ alembic/                    # DB migrations
+├─ docker-compose.yml          # postgres, redis, app, worker, mcp
+├─ pyproject.toml              # uv- or poetry-managed
+└─ .env.example
+11A. Repository Pattern — Contracts and Conventions
+This section codifies how repositories work so that every service and every test follows the same contract.
+11A.1 One repository per aggregate
+An aggregate is a cluster of objects treated as a single transactional unit. The aggregates and their root entities for this system are:
+Aggregate root
+Includes
+Repository
+Order
+Order, LineItem, ShippingAddress, Fulfillment, OrderRiskFlag
+OrderRepository
+Product
+Product, Variant, ProductOption, MediaRef
+ProductRepository
+InventoryItem
+InventoryItem, InventoryLevel (per location)
+InventoryRepository
+Customer
+Customer, Address, MarketingConsent
+CustomerRepository
+SubscriptionContract
+SubscriptionContract, SubscriptionLine, BillingPolicy
+SubscriptionRepository
+Location
+Location
+LocationRepository
+AnalyticsDay
+DailyKPI, SessionCount
+AnalyticsRepository
+SyncState
+SyncCursor per (store, resource)
+SyncStateRepository
+11A.2 Interface lives in the domain layer
+Repository interfaces are Python `Protocol` classes in `app/domain/repositories.py`. Concrete implementations live in `app/repositories/` and depend on SQLAlchemy. The domain layer never imports SQLAlchemy.
+# app/domain/repositories.py
+from typing import Protocol, Optional, Sequence
+from datetime import datetime
+from .models import Order, OrderId, StoreId, FinancialStatus
+
+class OrderRepository(Protocol):
+    def get(self, store_id: StoreId, order_id: OrderId) -> Optional[Order]: ...
+
+    def find_in_window(
+        self,
+        store_id: StoreId,
+        since: datetime,
+        until: datetime,
+        financial_status: Optional[FinancialStatus] = None,
+        sku: Optional[str] = None,
+        limit: int = 50,
+        cursor: Optional[str] = None,
+    ) -> tuple[Sequence[Order], Optional[str]]: ...
+
+    def upsert(self, order: Order) -> None: ...
+
+    def count_by_status(
+        self, store_id: StoreId, since: datetime, until: datetime
+    ) -> dict[FinancialStatus, int]: ...
+
+11A.3 Implementation in the data layer
+# app/repositories/orders.py
+from sqlalchemy.orm import Session
+from app.domain.models import Order
+from app.db.orm.order import OrderRow
+
+class SqlAlchemyOrderRepository:
+    """Implements domain.repositories.OrderRepository."""
+    def __init__(self, session: Session):
+        self._session = session
+
+    def get(self, store_id, order_id):
+        row = self._session.get(OrderRow, (store_id, order_id))
+        return _row_to_domain(row) if row else None
+
+    def find_in_window(self, store_id, since, until, financial_status=None,
+                       sku=None, limit=50, cursor=None):
+        q = (self._session.query(OrderRow)
+                          .filter(OrderRow.store_id == store_id,
+                                  OrderRow.processed_at >= since,
+                                  OrderRow.processed_at < until))
+        if financial_status:
+            q = q.filter(OrderRow.financial_status == financial_status)
+        if sku:
+            q = q.join(OrderRow.line_items).filter(LineItemRow.sku == sku)
+        if cursor:
+            q = q.filter(OrderRow.processed_at < _decode_cursor(cursor))
+        rows = q.order_by(OrderRow.processed_at.desc()).limit(limit + 1).all()
+        next_cursor = _encode_cursor(rows[-1].processed_at) if len(rows) > limit else None
+        return [_row_to_domain(r) for r in rows[:limit]], next_cursor
+
+11A.4 Unit of Work
+Transactions are managed by a `UnitOfWork` context manager that wraps a SQLAlchemy session and exposes the repositories. Services call repositories only inside a UoW block. Commit and rollback are explicit.
+# app/services/order_query.py
+class OrderQueryService:
+    def __init__(self, uow_factory):
+        self._uow_factory = uow_factory
+
+    def list_orders(self, store_id, since, until, **filters):
+        with self._uow_factory() as uow:
+            orders, next_cursor = uow.orders.find_in_window(
+                store_id, since, until, **filters
+            )
+            return ListOrdersResult(items=orders, next_cursor=next_cursor)
+
+# Sample usage from a Flask route:
+@bp.get("/api/v1/orders")
+def list_orders():
+    svc = current_app.container.order_query_service
+    result = svc.list_orders(
+        store_id=request.args["store_id"],
+        since=parse_dt(request.args["since"]),
+        until=parse_dt(request.args["until"]),
+    )
+    return jsonify(serialize(result))
+
+# Same service from an MCP tool:
+@mcp.tool()
+def list_orders(store_id: str, since: str, until: str, limit: int = 50):
+    result = container.order_query_service.list_orders(
+        store_id=store_id, since=parse_dt(since), until=parse_dt(until)
+    )
+    return [order_to_dict(o) for o in result.items]
+
+11A.5 Domain objects, not ORM rows
+Repositories return immutable domain objects (Python dataclasses with `frozen=True` or pydantic models). ORM rows never escape the data layer. Reasons:
+Lazy-loaded SQLAlchemy attributes can issue surprise queries hours later, in unrelated code paths. Returning a fully-materialized dataclass eliminates this class of bug.
+Domain objects can be constructed from non-DB sources (live Shopify GraphQL responses, in-memory test fixtures) without changing service code.
+Serialization for the API and MCP layers is uniform — both sides see the same domain types.
+11A.6 Specifications for complex queries
+Where filtering grows beyond a handful of optional parameters (Order search is the obvious example), use a `Specification` object instead of more keyword args:
+# app/domain/specs/order_spec.py
+@dataclass(frozen=True)
+class OrderSpec:
+    store_ids: Sequence[StoreId] | None = None
+    since: datetime | None = None
+    until: datetime | None = None
+    financial_status: FinancialStatus | None = None
+    fulfillment_status: FulfillmentStatus | None = None
+    sku: str | None = None
+    customer_email: str | None = None
+    min_total: Decimal | None = None
+    tag: str | None = None
+
+# Repository signature stays small:
+def find(self, spec: OrderSpec, *, limit: int, cursor: str | None) -> ...
+
+11A.7 Dependency injection
+`app/container.py` builds a small dependency-injection container that wires SQLAlchemy session factory → UnitOfWork → repositories → services. Both the Flask app factory and the MCP entrypoint pull pre-built service instances from the container. Tests build their own container with `InMemoryOrderRepository` (etc.) for fast service-layer unit tests.
+# app/container.py
+from dependency_injector import containers, providers
+class Container(containers.DeclarativeContainer):
+    config = providers.Configuration()
+    engine = providers.Singleton(create_engine, config.database_url)
+    session_factory = providers.Singleton(sessionmaker, bind=engine)
+    uow = providers.Factory(SqlAlchemyUnitOfWork, session_factory=session_factory)
+
+    order_query_service     = providers.Factory(OrderQueryService, uow_factory=uow.provider)
+    inventory_report_service= providers.Factory(InventoryReportingService, uow_factory=uow.provider)
+    analytics_service       = providers.Factory(AnalyticsService, uow_factory=uow.provider,
+                                                shopify_client=providers.Singleton(ShopifyClient,...))
+    sync_orchestrator       = providers.Factory(SyncOrchestrator, uow_factory=uow.provider,
+                                                shopify_client=providers.Singleton(ShopifyClient,...))
+
+11A.8 Testing strategy
+Test type
+Targets
+Repository used
+Unit (services)
+Service classes in app/services/*
+InMemory* implementations from tests/fakes/
+Integration (repositories)
+SQL repository implementations
+Real Postgres in Docker; rolled-back transactions per test
+Contract (presentation)
+Flask routes and MCP tools
+Stubbed services that return canned domain objects
+End-to-end (selective)
+Webhook-to-DB pipeline, sync orchestrator
+Real Postgres + Shopify dev store + replayed webhook bodies
+11A.9 Enforcement
+The architectural invariants are enforced by tooling rather than code review:
+A pre-commit hook runs `ruff check --select TID` with import-tidy rules forbidding `app.db` imports outside `app.repositories.*`, forbidding `sqlalchemy` imports outside `app.repositories.*` and `app.db.*`, and forbidding `app.repositories.*` imports outside `app.services.*` and `app.container`.
+`tests/architecture/` contains import-graph tests that fail CI if the layer rules are violated.
+Services accept repository protocols, not concrete classes — the static type-check (mypy / pyright) catches accidental coupling.
+12. REST + GraphQL API Surface
+The internal API exposes both styles. REST covers the predictable, paginated read patterns (orders list, order detail, inventory by location, daily KPIs). GraphQL covers exploratory cross-store queries that benefit from field selection and joins. Both are versioned at the URL prefix so a v2 can ship without breaking integrations.
+12.1 REST endpoints (selected)
+Method
+Path
+Returns
+GET
+/api/v1/stores
+Active stores.
+GET
+/api/v1/orders
+Paginated orders. Filters: store_id, since, until, financial_status, fulfillment_status, sku.
+GET
+/api/v1/orders/{id}
+Full order detail with line items and shipping address.
+GET
+/api/v1/products
+Paginated catalog.
+GET
+/api/v1/products/{id}
+Product with variants and inventory levels.
+GET
+/api/v1/inventory
+Inventory by item/location. Filters: store_id, sku, location_id, low_stock=true.
+GET
+/api/v1/subscriptions
+Active subscription contracts.
+GET
+/api/v1/analytics/daily
+store_id × date metrics: sessions, orders, units, revenue, conversion.
+POST
+/api/v1/sync/orders/{id}/refresh
+Force a live re-fetch of one order from Shopify.
+Every endpoint above is a thin Flask view: it parses request input into a service call, awaits the result, and serializes domain objects to JSON. The view code does not import SQLAlchemy or any ORM model. Pagination cursors are produced by the repository layer and passed through verbatim.
+12.2 GraphQL gateway
+A small GraphQL schema (Strawberry recommended) wraps the same service classes used by REST — not the ORM directly. Resolvers call service methods and map domain objects to GraphQL types. It is intentionally narrow: the goal is convenient internal querying, not a full mirror of Shopify's GraphQL surface. Schema sketch:
+type Query {
+  stores: [Store!]!
+  orders(storeId: ID, since: DateTime, until: DateTime, status: OrderStatus,
+         first: Int = 50, after: String): OrderConnection!
+  order(id: ID!): Order
+  inventory(storeId: ID!, sku: String, locationId: ID, lowStock: Boolean): [InventoryLevel!]!
+  analyticsDaily(storeId: ID!, since: Date!, until: Date!): [DailyKPI!]!
+  subscriptions(storeId: ID, status: SubscriptionStatus): [SubscriptionContract!]!
+}
+13. MCP Server Design
+The MCP server lets Claude (and other compatible LLM clients) ask natural-language questions across the three stores. It is a separate process from Flask so it can run independently — for example, alongside Claude Desktop on a developer machine via stdio, or behind a reverse proxy in HTTP mode for shared use.
+13.1 Why a custom MCP and not Shopify's
+Shopify currently ships four official MCP servers — Dev, Storefront, Customer Account, and Checkout — plus the Universal Commerce Protocol catalog. None of these expose internal Admin-side reporting across multiple stores: the Storefront MCP is for buyer-facing assistants, Customer Account is per-customer with OAuth, Dev is for assisting developers with Shopify schema queries, and Checkout is for the checkout flow. The internal use case here — "summarize last week's orders across all three stores" — is not in scope for any of them. The application therefore ships its own MCP that wraps its own Postgres cache and on-demand fetch path.
+13.2 Framework
+FastMCP (Python). Comparable ergonomics to Flask, supports both stdio and HTTP transports out of the box, integrates with pydantic for typed tool schemas.
+13.3 Tool surface (v1, read-only)
+Tool
+Inputs
+Returns
+list_stores
+(none)
+Active stores.
+list_orders
+store_id?, since, until, status?, sku?, limit
+Order rows with totals and statuses.
+get_order
+order_id
+Full order detail incl. line items, shipping, fulfillments.
+search_orders_by_customer
+store_id?, email or phone
+Matching orders.
+list_products
+store_id?, query?, status?, limit
+Product rows with variant counts.
+get_product
+product_id
+Product with variants and current inventory.
+check_inventory
+store_id, sku or product_id, location_id?
+Available units per location.
+list_low_stock
+store_id?, threshold=5
+Items below threshold.
+get_kpis
+store_id?, since, until, metrics
+sessions, orders, units, revenue, conversion.
+compare_stores
+metric, since, until
+Same metric across all three stores.
+list_subscriptions
+store_id?, status?
+Active/paused contracts.
+refresh_order
+order_id
+Forces live re-fetch from Shopify, returns updated row.
+13.4 Tool design conventions
+Each MCP tool is a thin function that constructs a service call and serializes the result. The service classes are the same ones the REST API uses; there is no MCP-specific data access layer. New capabilities are added once at the service layer and surfaced in both the API and MCP simultaneously.
+Every tool input/output is a pydantic model with field descriptions — these become the LLM-visible schema.
+Date inputs accept ISO 8601 strings or relative phrases like 'yesterday', '7d', 'last_week'. The MCP layer normalizes before passing to the data layer.
+Result sets are paginated; tools return at most ~50 rows per call and surface a `next_cursor` for follow-up calls.
+Responses include a `freshness` field per row indicating cache age in seconds, so the LLM can choose to call refresh_order when needed.
+Mutations are out of scope for v1. v2 may add `pause_subscription`, `adjust_inventory`, etc., each behind a per-tool authorization scope.
+13.5 Transport configuration
+# stdio (Claude Desktop, Claude Code)
+{
+  "mcpServers": {
+    "shopify-multistore": {
+      "command": "uv",
+      "args": ["run", "--project", "/path/to/repo", "python", "-m", "mcp_server"],
+      "env": { "DATABASE_URL": "postgresql://..." }
+    }
+  }
+}
+
+# HTTP (remote agents)
+uv run uvicorn mcp_server.http:app --host 0.0.0.0 --port 8801
+14. Local Development Setup
+The phase-zero target is a single developer running everything on a laptop, talking to the live Shopify stores.
+14.1 Components
+Postgres 16 in Docker (docker-compose service).
+Redis in Docker (RQ/Celery broker).
+Flask dev server on port 5000.
+Worker process consuming the queue.
+FastMCP server in stdio mode for Claude Desktop, or HTTP on 8801 for testing.
+Cloudflare Tunnel or ngrok pointing at the local Flask dev server so Shopify webhooks can reach it.
+14.2 First-run sequence
+Clone repo, copy .env.example to .env, fill in per-store access tokens and webhook secrets.
+docker compose up postgres redis
+flask db upgrade  (Alembic migrations)
+flask sync init  (one-shot bulk import per store, populates everything)
+In a second terminal, start the tunnel; copy the public URL.
+flask shopify register-webhooks --base-url <tunnel-url>
+flask run  (dev server)
+rq worker  (or celery worker)
+Optionally: register the MCP server with Claude Desktop config.
+14.3 Test data and dev safety
+Use a Shopify development store cloned from production data for any destructive testing in v2.
+All v1 work is read-only against production stores, so no copy is required — but a read-only marker in the per-store config makes this explicit and is enforced by the client.
+15. Portability and Deployment
+The application is built to 12-factor conventions so it can move from laptop to any container target without code changes.
+Configuration: every external dependency (database URL, Redis URL, per-store credentials, webhook tunnel URL, GA4 credentials) is read from environment variables.
+Stateless web layer: Flask processes can be killed and replaced without losing state. All state is in Postgres or Redis.
+Idempotent migrations: Alembic only.
+Containerized: a single Dockerfile builds an image with both the Flask app and the worker entrypoint; orchestration (docker-compose, Kubernetes, Render Blueprint) selects which command to run.
+Secret abstraction: a thin `secrets` module reads from env in dev and from a configurable backend (AWS Secrets Manager, GCP, Vault) in production.
+Logging: structured JSON to stdout; aggregation is the host's job.
+15.1 Likely production targets
+Target
+Fit
+Notes
+Render
+Excellent
+Web service + background worker + managed Postgres + free TLS endpoint = drop-in fit. Fastest path.
+Fly.io
+Excellent
+Global anycast, fly postgres, simple Dockerfile deploy.
+AWS ECS Fargate + RDS
+Good
+Most flexibility, most yak-shaving. Choose if AWS is already your cloud.
+Self-hosted on a VM
+Acceptable
+Works fine; you become responsible for TLS, restarts, and backups.
+16. Security and Compliance Considerations
+Webhook HMAC verification on every inbound delivery, with constant-time compare and request-body capture before parsing.
+Per-store access tokens encrypted at rest, never logged, never returned by any API endpoint.
+PII (customer names, addresses, emails, phones) is restricted to specific endpoints; the dashboard masks email/phone by default and reveals on click with audit trail.
+API tokens for internal callers expire on a configurable cadence (default 90 days).
+MCP HTTP transport is bearer-token gated and intended for trusted networks; not exposed publicly without an authentication proxy.
+Rate limiting on the internal API and MCP HTTP endpoint to prevent runaway clients from saturating the Shopify cost budget.
+Dependencies pinned and scanned (pip-audit / Dependabot).
+Backups: managed Postgres provider performs point-in-time recovery; nightly export of normalized data to object storage as a defense-in-depth measure.
+17. Observability
+Structured JSON logs with: request_id, store_id, route, latency_ms, status, query_cost (for Shopify calls).
+Per-store dashboards: webhook delivery success rate, queue depth, GraphQL cost consumption, sync lag (max(now() - last_seen) per resource).
+Alerts: webhook auth failures > 0 in 5 min, queue depth > N for 10 min, sync lag > 30 min on orders, GraphQL throttle errors > 5% of calls.
+Tracing optional in v1; instrument with OpenTelemetry hooks so it can be turned on without code changes.
+MCP-specific: log tool name, caller, latency, and a hash of inputs (not full inputs) so the team can analyze usage patterns without storing query content.
+18. Risks and Open Questions
+Risk / Question
+Mitigation or next step
+Plus vs non-Plus status of each store — affects rate limits and ShopifyQL coverage.
+Discovery item: confirm in store admin before sizing.
+Subscription app per store may differ — native vs Recharge vs Skio etc.
+Discovery item: identify before implementation; provider adapter pattern absorbs differences.
+ShopifyQL surface continues to evolve — metric availability may shift.
+Treat each metric as a probe-and-verify item; GA4 is the documented fallback.
+Webhook delivery is best-effort; events can be missed during outages.
+Nightly Bulk Operations reconciliation closes the gap.
+Custom App creation path changed January 1, 2026 — Admin UI is no longer available.
+Use Shopify Dev Dashboard or Shopify CLI for any new custom apps in this project.
+Token compromise across three stores would expose customer PII.
+Encrypted at rest, redacted from logs, scope-limited, rotatable; deploy IP allowlist on production token usage where feasible.
+MCP usage by Claude could trigger expensive Shopify calls accidentally.
+Tools default to cache-only; live refresh requires explicit refresh tools; per-MCP-caller rate limits.
+Layer-rule violations creep in over time as the codebase grows.
+Pre-commit lint + CI import-graph tests; treat layer breaches as blocking review comments.
+19. Phased Implementation Roadmap
+Phase 0 — Discovery (1 week)
+Confirm Plus status, subscription app, location count, analytics tooling for each of the three stores.
+Provision Custom Apps (or document existing ones) with the scope set in Section 5.2. Capture access tokens in a secrets store.
+Probe ShopifyQL coverage per store; confirm GA4 access where needed.
+Phase 1 — Foundation, domain, and repositories (2–3 weeks)
+Repository skeleton; Postgres schema; Alembic migrations.
+Domain dataclasses, repository protocols, SQLAlchemy repository implementations.
+UnitOfWork, DI container, in-memory repositories for tests.
+Shopify GraphQL client with cost-aware throttling.
+Webhook receiver with HMAC verification, calling SyncOrchestrator service.
+Bulk Operations runner.
+Initial bulk import of orders, products, variants, inventory, locations for all three stores.
+Webhook subscriptions for orders/* and inventory_levels/update; verify near-real-time updates land in Postgres.
+Phase 2 — Service and serving surfaces (2–3 weeks)
+OrderQueryService, InventoryReportingService, StoreComparisonService.
+REST API v1 endpoints listed in Section 12.1, all calling services.
+Internal dashboard MVP with cross-store order list, product list, low-stock view.
+Authentication and bearer-token issuance for internal API.
+Phase 3 — Analytics and subscriptions (2 weeks)
+Nightly ShopifyQL pull into sessions_daily.
+GA4 fallback adapter where needed.
+Subscription provider adapters for the apps actually in use, behind the SubscriptionService.
+Daily KPI rollup table and dashboard view.
+Phase 4 — MCP server (1–2 weeks)
+FastMCP server with the read-only tools from Section 13.3 — each tool dispatches to an existing service method.
+stdio config for Claude Desktop; HTTP transport behind bearer auth for shared use.
+Per-tool audit logging.
+Phase 5 — Hardening and deploy (1–2 weeks)
+Observability dashboards and alerts.
+Containerization and deployment to Render (or chosen target).
+Documentation: ops runbook, scope rotation procedure, MCP tool reference for end users.
+Tabletop exercises: webhook outage, token rotation, store credential revocation.
+20. References
+All Shopify URLs verified as of late April 2026.
+Shopify Admin GraphQL API reference
+Shopify API versioning policy
+Admin API rate limits (cost-based leaky bucket)
+Bulk Operations (queries)
+ShopifyQL syntax reference
+Webhook subscription and HMAC verification
+Access scopes reference
+Shopify Storefront MCP overview
+Shopify Dev MCP server
+shopify_python_api (official Python SDK)
+Shopify Changelog — 2026-01 adoption
+Custom app creation path change (Jan 1, 2026)

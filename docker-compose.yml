@@ -1,0 +1,99 @@
+# =============================================================================
+# Local development stack for the Shopify Multi-Store Connector.
+#
+# Phase 0/Phase 1 reality:
+#   - postgres + redis are usable today (you can `docker compose up postgres redis`).
+#   - app, worker, mcp services reference an image built from the Dockerfile in
+#     this folder. The Dockerfile entry point is parameterized — same image,
+#     different CMD per service.
+#   - The app/worker/mcp services will not start cleanly until Phase 1 lands
+#     application code under app/ and mcp_server/. That is intentional.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: shopify_connector_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: shopify_connector
+      POSTGRES_USER: shopify_connector
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopify_connector"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: shopify_connector_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: shopify_connector:latest
+    container_name: shopify_connector_app
+    restart: unless-stopped
+    command: ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:create_app()"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://shopify_connector:dev_password@postgres:5432/shopify_connector
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: shopify_connector:latest
+    container_name: shopify_connector_worker
+    restart: unless-stopped
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "default"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://shopify_connector:dev_password@postgres:5432/shopify_connector
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mcp:
+    image: shopify_connector:latest
+    container_name: shopify_connector_mcp
+    restart: unless-stopped
+    # HTTP transport for shared use; for Claude Desktop stdio, run mcp_server
+    # directly on the host (see README) — Desktop launches it via the local
+    # config and pipes stdin/stdout.
+    command: ["python", "-m", "mcp_server", "--transport", "http", "--host", "0.0.0.0", "--port", "8801"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://shopify_connector:dev_password@postgres:5432/shopify_connector
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8801:8801"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    driver: local
