@@ -15,21 +15,24 @@ Query params (all optional):
 
 Response:
   { "items": [...], "next_cursor": str | null, "limit": int }
-
-Auth: routes are open in v1 alpha; bearer-token gating lands in the
-next slice (TR-4).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 
 from flask import Blueprint, current_app, jsonify, request
 from flask.wrappers import Response
 
+from app.blueprints.api.v1._params import (
+    BadRequestError,
+    first,
+    parse_datetime,
+    parse_decimal,
+    parse_enum,
+    parse_int,
+)
 from app.blueprints.api.v1._serialize import order_to_json
 from app.domain.enums import FinancialStatus, FulfillmentStatus
 from app.domain.models import CustomerId, OrderId, StoreId
@@ -39,14 +42,6 @@ from app.services.order_query import DEFAULT_LIMIT, OrderQueryService
 bp = Blueprint("orders", __name__, url_prefix="/orders")
 
 
-class _BadRequest(Exception):
-    """Internal — caught by the route to return 400 with a helpful message."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
-
-
 def _service() -> OrderQueryService:
     svc = current_app.extensions.get("order_query_service")
     if svc is None:
@@ -54,77 +49,42 @@ def _service() -> OrderQueryService:
     return svc  # type: ignore[no-any-return]
 
 
-def _parse_int(field: str, raw: str) -> int:
-    try:
-        return int(raw)
-    except ValueError as exc:
-        raise _BadRequest(f"{field} must be an integer (got {raw!r})") from exc
-
-
-def _parse_datetime(field: str, raw: str) -> datetime:
-    try:
-        return datetime.fromisoformat(raw)
-    except ValueError as exc:
-        raise _BadRequest(f"{field} must be ISO 8601 datetime (got {raw!r})") from exc
-
-
-def _parse_decimal(field: str, raw: str) -> Decimal:
-    try:
-        return Decimal(raw)
-    except InvalidOperation as exc:
-        raise _BadRequest(f"{field} must be a decimal number (got {raw!r})") from exc
-
-
-def _parse_enum[E: (FinancialStatus, FulfillmentStatus)](
-    field: str, raw: str, enum_cls: type[E]
-) -> E:
-    try:
-        return enum_cls(raw)
-    except ValueError as exc:
-        valid = ", ".join(member.value for member in enum_cls)
-        raise _BadRequest(f"{field} must be one of [{valid}] (got {raw!r})") from exc
-
-
 def _parse_spec_and_paging(args: dict[str, list[str]]) -> tuple[OrderSpec, int, str | None]:
     """Build an OrderSpec + (limit, cursor) from a request.args MultiDict-as-dict."""
     store_ids: tuple[StoreId, ...] | None = None
     raw_store_ids = args.get("store_id") or []
     if raw_store_ids:
-        store_ids = tuple(StoreId(_parse_int("store_id", v)) for v in raw_store_ids)
+        store_ids = tuple(StoreId(parse_int("store_id", v)) for v in raw_store_ids)
 
-    def _first(name: str) -> str | None:
-        values = args.get(name)
-        return values[0] if values else None
-
-    since_raw = _first("since")
-    until_raw = _first("until")
-    fs_raw = _first("financial_status")
-    fls_raw = _first("fulfillment_status")
-    sku = _first("sku")
-    cust_id_raw = _first("customer_id")
-    cust_email = _first("customer_email")
-    min_total_raw = _first("min_total")
-    tag = _first("tag")
-    limit_raw = _first("limit")
-    cursor = _first("cursor")
+    since_raw = first(args, "since")
+    until_raw = first(args, "until")
+    fs_raw = first(args, "financial_status")
+    fls_raw = first(args, "fulfillment_status")
+    sku = first(args, "sku")
+    cust_id_raw = first(args, "customer_id")
+    cust_email = first(args, "customer_email")
+    min_total_raw = first(args, "min_total")
+    tag = first(args, "tag")
+    limit_raw = first(args, "limit")
+    cursor = first(args, "cursor")
 
     spec = OrderSpec(
         store_ids=store_ids,
-        since=_parse_datetime("since", since_raw) if since_raw else None,
-        until=_parse_datetime("until", until_raw) if until_raw else None,
+        since=parse_datetime("since", since_raw) if since_raw else None,
+        until=parse_datetime("until", until_raw) if until_raw else None,
         financial_status=(
-            _parse_enum("financial_status", fs_raw, FinancialStatus) if fs_raw else None
+            parse_enum("financial_status", fs_raw, FinancialStatus) if fs_raw else None
         ),
         fulfillment_status=(
-            _parse_enum("fulfillment_status", fls_raw, FulfillmentStatus) if fls_raw else None
+            parse_enum("fulfillment_status", fls_raw, FulfillmentStatus) if fls_raw else None
         ),
         sku=sku,
-        customer_id=(CustomerId(_parse_int("customer_id", cust_id_raw)) if cust_id_raw else None),
+        customer_id=(CustomerId(parse_int("customer_id", cust_id_raw)) if cust_id_raw else None),
         customer_email=cust_email,
-        min_total=_parse_decimal("min_total", min_total_raw) if min_total_raw else None,
+        min_total=parse_decimal("min_total", min_total_raw) if min_total_raw else None,
         tag=tag,
     )
-    limit = _parse_int("limit", limit_raw) if limit_raw else DEFAULT_LIMIT
+    limit = parse_int("limit", limit_raw) if limit_raw else DEFAULT_LIMIT
     return spec, limit, cursor
 
 
@@ -132,8 +92,8 @@ def _error(message: str, status: HTTPStatus) -> tuple[Response, int]:
     return jsonify({"error": message}), int(status)
 
 
-@bp.errorhandler(_BadRequest)
-def _handle_bad_request(exc: _BadRequest) -> tuple[Response, int]:
+@bp.errorhandler(BadRequestError)
+def _handle_bad_request(exc: BadRequestError) -> tuple[Response, int]:
     return _error(exc.message, HTTPStatus.BAD_REQUEST)
 
 

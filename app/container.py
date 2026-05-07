@@ -29,6 +29,7 @@ from app.domain.repositories import UnitOfWork
 from app.jobs.queue import InlineJobQueue
 from app.services.audit import AuditService
 from app.services.auth import AuthService
+from app.services.inventory_reporting import InventoryReportingService
 from app.services.order_query import OrderQueryService
 from app.services.sync import SyncService
 from app.services.webhook_ingest import WebhookIngestService
@@ -85,6 +86,11 @@ class Container(containers.DeclarativeContainer):
 
     order_query_service = providers.Factory(
         OrderQueryService,
+        uow_factory=uow_factory,
+    )
+
+    inventory_reporting_service = providers.Factory(
+        InventoryReportingService,
         uow_factory=uow_factory,
     )
 

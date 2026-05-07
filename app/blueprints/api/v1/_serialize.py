@@ -14,6 +14,7 @@ from typing import Any
 
 from app.domain.models import (
     Fulfillment,
+    InventoryLevel,
     Order,
     OrderLineItem,
     OrderShippingAddress,
@@ -79,6 +80,20 @@ def _fulfillment(f: Fulfillment) -> dict[str, Any]:
         "tracking_url": f.tracking_url,
         "created_at": _dt(f.created_at),
         "updated_at": _dt(f.updated_at),
+    }
+
+
+def inventory_level_to_json(level: InventoryLevel) -> dict[str, Any]:
+    return {
+        "id": int(level.id),
+        "store_id": int(level.store_id),
+        "inventory_item_id": int(level.inventory_item_id),
+        "location_id": int(level.location_id),
+        "available": level.available,
+        "on_hand": level.on_hand,
+        "committed": level.committed,
+        "incoming": level.incoming,
+        "updated_at": _dt(level.updated_at),
     }
 
 
