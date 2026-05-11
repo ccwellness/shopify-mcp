@@ -18,6 +18,8 @@ from app.domain.models import (
     Order,
     OrderLineItem,
     OrderShippingAddress,
+    StoreComparison,
+    StoreComparisonRow,
 )
 
 
@@ -94,6 +96,29 @@ def inventory_level_to_json(level: InventoryLevel) -> dict[str, Any]:
         "committed": level.committed,
         "incoming": level.incoming,
         "updated_at": _dt(level.updated_at),
+    }
+
+
+def _comparison_row(row: StoreComparisonRow) -> dict[str, Any]:
+    return {
+        "store_id": int(row.store_id),
+        "store_key": row.store_key,
+        "order_count": row.order_count,
+        "paid_revenue": _money(row.paid_revenue),
+        "refunds_total": _money(row.refunds_total),
+        "net_revenue": _money(row.net_revenue),
+        "units_sold": row.units_sold,
+        "currency_code": row.currency_code,
+        "status_counts": {str(status): count for status, count in row.status_counts.items()},
+    }
+
+
+def store_comparison_to_json(comparison: StoreComparison) -> dict[str, Any]:
+    return {
+        "since": _dt(comparison.since),
+        "until": _dt(comparison.until),
+        "currency_warning": comparison.currency_warning,
+        "rows": [_comparison_row(r) for r in comparison.rows],
     }
 
 
