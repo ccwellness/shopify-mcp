@@ -357,6 +357,36 @@ class SyncStateRow:
 
 
 # ---------------------------------------------------------------------------
+# Order aggregate / cross-store comparison
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OrderAggregate:
+    """Per-store rollup over a `[since, until]` window.
+
+    Semantics:
+      - `count` is every order in the window regardless of status.
+      - `revenue` and `units` count only orders with financial_status='paid'
+        (matches "money received" — pending and refunded don't contribute).
+      - `status_counts` lets the caller reconstruct other variants
+        (e.g. count-paid, count-refunded) without a round-trip.
+      - `currency_code` is the dominant currency among matched orders;
+        for cross-store reports the caller compares per-row currencies and
+        surfaces a warning if they differ.
+    """
+
+    store_id: StoreId
+    since: datetime
+    until: datetime
+    count: int
+    revenue: Money
+    units: int
+    currency_code: str | None
+    status_counts: dict[FinancialStatus, int]
+
+
+# ---------------------------------------------------------------------------
 # API auth + audit (TR-4, TR-6)
 # ---------------------------------------------------------------------------
 

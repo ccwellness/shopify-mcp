@@ -16,6 +16,7 @@ import gzip
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal
 from itertools import count
 
 from app.domain.enums import FinancialStatus, SyncResource, WebhookProcessingStatus
@@ -34,6 +35,7 @@ from app.domain.models import (
     Location,
     LocationId,
     Order,
+    OrderAggregate,
     OrderId,
     Page,
     Product,
@@ -262,6 +264,42 @@ class InMemoryOrderRepository:
                 continue
             out[o.financial_status] += 1
         return dict(out)
+
+    def aggregate_in_window(
+        self,
+        store_id: StoreId,
+        since: datetime,
+        until: datetime,
+    ) -> OrderAggregate:
+        # Match SQL impl: half-open window [since, until).
+        matching = [
+            o
+            for o in self._db.orders.values()
+            if o.store_id == store_id and since <= o.processed_at < until
+        ]
+        status_counts: dict[FinancialStatus, int] = defaultdict(int)
+        for o in matching:
+            if o.financial_status is not None:
+                status_counts[o.financial_status] += 1
+        paid = [o for o in matching if o.financial_status == FinancialStatus.PAID]
+        revenue = sum((o.total_price for o in paid), Decimal("0.00"))
+        units = sum(li.quantity for o in paid for li in o.line_items)
+        currency_code: str | None = None
+        if matching:
+            cur_counts: dict[str, int] = defaultdict(int)
+            for o in matching:
+                cur_counts[o.currency_code] += 1
+            currency_code = max(cur_counts, key=lambda k: cur_counts[k])
+        return OrderAggregate(
+            store_id=store_id,
+            since=since,
+            until=until,
+            count=len(matching),
+            revenue=revenue,
+            units=units,
+            currency_code=currency_code,
+            status_counts=dict(status_counts),
+        )
 
     def upsert(self, order: Order) -> None:
         self._db.orders[order.id] = order

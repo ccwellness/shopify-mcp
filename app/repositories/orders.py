@@ -10,6 +10,7 @@ Pagination on `find` uses keyset cursor on (processed_at, id) DESC.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import func, literal, select, tuple_
 from sqlalchemy.orm import Session
@@ -34,6 +35,7 @@ from app.domain.models import (
     FulfillmentId,
     LocationId,
     Order,
+    OrderAggregate,
     OrderId,
     OrderLineItem,
     OrderLineItemId,
@@ -282,6 +284,74 @@ class SqlAlchemyOrderRepository:
             .group_by(OrderRow.financial_status)
         ).all()
         return {FinancialStatus(status): count for status, count in rows if status is not None}
+
+    def aggregate_in_window(
+        self,
+        store_id: StoreId,
+        since: datetime,
+        until: datetime,
+    ) -> OrderAggregate:
+        # Window predicate reused across the three queries below.
+        in_window = (
+            OrderRow.store_id == int(store_id),
+            OrderRow.processed_at >= since,
+            OrderRow.processed_at < until,
+        )
+        paid = OrderRow.financial_status == FinancialStatus.PAID.value
+
+        # 1) status_counts + total count + paid revenue, in one GROUP BY.
+        status_rows = self._session.execute(
+            select(
+                OrderRow.financial_status,
+                func.count(OrderRow.id),
+                func.coalesce(func.sum(OrderRow.total_price), Decimal("0")),
+            )
+            .where(*in_window)
+            .group_by(OrderRow.financial_status)
+        ).all()
+        count = 0
+        revenue = Decimal("0.00")
+        status_counts: dict[FinancialStatus, int] = {}
+        for status_value, n, rev in status_rows:
+            count += int(n)
+            if status_value is not None:
+                try:
+                    status_counts[FinancialStatus(status_value)] = int(n)
+                except ValueError:
+                    # Unknown status (forward-compat): drop into status_counts as-is would
+                    # break the typed dict; just skip — the order still contributes to count.
+                    pass
+                if status_value == FinancialStatus.PAID.value:
+                    revenue = Decimal(rev) if rev is not None else Decimal("0.00")
+
+        # 2) units sold across paid orders only (line item quantities).
+        units = self._session.scalar(
+            select(func.coalesce(func.sum(OrderLineItemRow.quantity), 0))
+            .select_from(OrderLineItemRow)
+            .join(OrderRow, OrderLineItemRow.order_id == OrderRow.id)
+            .where(*in_window, paid)
+        )
+
+        # 3) Dominant currency code for the matched orders (or None when empty).
+        currency_row = self._session.execute(
+            select(OrderRow.currency_code, func.count(OrderRow.id).label("n"))
+            .where(*in_window)
+            .group_by(OrderRow.currency_code)
+            .order_by(func.count(OrderRow.id).desc())
+            .limit(1)
+        ).first()
+        currency_code = currency_row[0] if currency_row is not None else None
+
+        return OrderAggregate(
+            store_id=store_id,
+            since=since,
+            until=until,
+            count=count,
+            revenue=revenue,
+            units=int(units or 0),
+            currency_code=currency_code,
+            status_counts=status_counts,
+        )
 
     def upsert(self, order: Order) -> None:
         existing = self._session.scalar(

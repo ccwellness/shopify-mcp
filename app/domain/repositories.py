@@ -37,6 +37,7 @@ from app.domain.models import (
     Location,
     LocationId,
     Order,
+    OrderAggregate,
     OrderId,
     Page,
     Product,
@@ -119,6 +120,15 @@ class OrderRepository(Protocol):
         since: datetime,
         until: datetime,
     ) -> dict[FinancialStatus, int]: ...
+
+    def aggregate_in_window(
+        self,
+        store_id: StoreId,
+        since: datetime,
+        until: datetime,
+    ) -> OrderAggregate:
+        """Per-store rollup over a `[since, until]` window. See OrderAggregate."""
+        ...
 
     def upsert(self, order: Order) -> None: ...
 
