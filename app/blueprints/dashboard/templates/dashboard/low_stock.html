@@ -1,0 +1,71 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Low Stock — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Low stock</h1>
+  <p class="muted">Levels with <code>available &lt; threshold</code>. Levels with unknown availability are excluded.</p>
+
+  <form method="get" action="{{ url_for('dashboard.low_stock') }}" class="filters">
+    <label>
+      Threshold
+      <input type="number" name="threshold" min="0" value="{{ threshold_raw }}">
+    </label>
+    <label>
+      Store id
+      <input type="text" name="store_id" value="{{ store_id_raw[0] if store_id_raw else '' }}">
+    </label>
+    <label>
+      Location id
+      <input type="text" name="location_id" value="{{ location_id_raw }}">
+    </label>
+    <label>
+      SKU
+      <input type="text" name="sku" value="{{ sku_raw }}">
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if page %}
+    {% if page.items %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Store</th>
+            <th>Location</th>
+            <th>Inventory item</th>
+            <th class="num">Available</th>
+            <th class="num">On hand</th>
+            <th class="num">Committed</th>
+            <th>Last update</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lvl in page.items %}
+            <tr>
+              <td>{{ lvl.store_id }}</td>
+              <td>{{ lvl.location_id }}</td>
+              <td>{{ lvl.inventory_item_id }}</td>
+              <td class="num"><strong>{{ lvl.available if lvl.available is not none else '—' }}</strong></td>
+              <td class="num">{{ lvl.on_hand if lvl.on_hand is not none else '—' }}</td>
+              <td class="num">{{ lvl.committed if lvl.committed is not none else '—' }}</td>
+              <td>{{ lvl.updated_at.isoformat() if lvl.updated_at else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if page.next_cursor %}
+        <p>
+          <a href="{{ url_for('dashboard.low_stock', cursor=page.next_cursor,
+                              threshold=threshold_raw,
+                              store_id=store_id_raw[0] if store_id_raw else None,
+                              location_id=location_id_raw, sku=sku_raw) }}"
+             role="button" class="secondary">Next page →</a>
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="muted">No low-stock items.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

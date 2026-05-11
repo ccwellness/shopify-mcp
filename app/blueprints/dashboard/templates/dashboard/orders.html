@@ -1,0 +1,72 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Orders — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Orders</h1>
+  <p class="muted">Cross-store order list. Filters apply server-side; pagination fetches incrementally via HTMX.</p>
+
+  <form method="get" action="{{ url_for('dashboard.orders') }}" class="filters">
+    <label>
+      Since
+      <input type="text" name="since" value="{{ since_raw }}" placeholder="2026-05-01T00:00:00Z">
+    </label>
+    <label>
+      Until
+      <input type="text" name="until" value="{{ until_raw }}" placeholder="2026-05-11T00:00:00Z">
+    </label>
+    <label>
+      Store id
+      <input type="text" name="store_id" value="{{ store_id_raw[0] if store_id_raw else '' }}">
+    </label>
+    <label>
+      Financial status
+      <select name="financial_status">
+        <option value="">(any)</option>
+        {% for s in financial_statuses %}
+          <option value="{{ s }}" {% if status_raw == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      SKU
+      <input type="text" name="sku" value="{{ sku_raw }}">
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if page %}
+    {% if page.items %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Store</th>
+            <th>Order</th>
+            <th>Processed at</th>
+            <th>Status</th>
+            <th class="num">Total</th>
+            <th>Currency</th>
+          </tr>
+        </thead>
+        <tbody id="order-rows">
+          {% include "dashboard/_orders_rows.html" %}
+        </tbody>
+      </table>
+
+      {% if page.next_cursor %}
+        <p>
+          <button hx-get="{{ url_for('dashboard.orders_rows', cursor=page.next_cursor,
+                                     since=since_raw, until=until_raw,
+                                     store_id=store_id_raw[0] if store_id_raw else None,
+                                     financial_status=status_raw, sku=sku_raw) }}"
+                  hx-target="#order-rows"
+                  hx-swap="beforeend"
+                  hx-select="tr"
+                  class="secondary">Load more</button>
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="muted">No orders match the filter.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

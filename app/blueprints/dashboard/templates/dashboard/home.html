@@ -1,0 +1,26 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Dashboard — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Shopify Connector</h1>
+  <p class="muted">Cross-store operations dashboard. Read-only.</p>
+
+  <section class="grid-3">
+    <article>
+      <header><strong>Compare</strong></header>
+      <p>Per-store revenue, refunds, units over a window.</p>
+      <a href="{{ url_for('dashboard.compare') }}" role="button">Open compare →</a>
+    </article>
+    <article>
+      <header><strong>Orders</strong></header>
+      <p>Cross-store order list with filters and incremental load.</p>
+      <a href="{{ url_for('dashboard.orders') }}" role="button">Open orders →</a>
+    </article>
+    <article>
+      <header><strong>Low Stock</strong></header>
+      <p>Items below the inventory threshold per location.</p>
+      <a href="{{ url_for('dashboard.low_stock') }}" role="button">Open low stock →</a>
+    </article>
+  </section>
+{% endblock %}

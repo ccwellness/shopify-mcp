@@ -1,0 +1,75 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Compare — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Cross-store comparison</h1>
+  <p class="muted">Paid revenue, refunds in window, and net revenue per store.</p>
+
+  <form method="get" action="{{ url_for('dashboard.compare') }}" class="filters">
+    <label>
+      Since (ISO 8601)
+      <input type="text" name="since" value="{{ since_raw }}" required>
+    </label>
+    <label>
+      Until (ISO 8601)
+      <input type="text" name="until" value="{{ until_raw }}" required>
+    </label>
+    <label>
+      Store id (optional, repeatable)
+      <input type="text" name="store_id" value="{{ store_id_raw[0] if store_id_raw else '' }}">
+    </label>
+    <button type="submit">Run</button>
+  </form>
+
+  {% if comparison %}
+    {% if comparison.currency_warning %}
+      <p class="warning">
+        ⚠ Rows span more than one currency. Per-row values are correct in their
+        own currency; cross-store totals are suppressed.
+      </p>
+    {% endif %}
+
+    {% if comparison.rows %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Store</th>
+            <th class="num">Orders</th>
+            <th class="num">Paid revenue</th>
+            <th class="num">Refunds</th>
+            <th class="num">Net revenue</th>
+            <th class="num">Units</th>
+            <th>Currency</th>
+            <th>Status mix</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in comparison.rows %}
+            <tr>
+              <td><strong>{{ row.store_key }}</strong></td>
+              <td class="num">{{ row.order_count }}</td>
+              <td class="num">{{ row.paid_revenue }}</td>
+              <td class="num">{{ row.refunds_total }}</td>
+              <td class="num"><strong>{{ row.net_revenue }}</strong></td>
+              <td class="num">{{ row.units_sold }}</td>
+              <td>{{ row.currency_code or '—' }}</td>
+              <td>
+                {% for status, count in row.status_counts.items() %}
+                  <span class="pill">{{ status.value }}: {{ count }}</span>
+                {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <p class="muted">
+        Window: <code>{{ comparison.since.isoformat() }}</code> →
+        <code>{{ comparison.until.isoformat() }}</code> (half-open).
+      </p>
+    {% else %}
+      <p class="muted">No active stores match the filter.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

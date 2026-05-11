@@ -1,0 +1,15 @@
+{% if page %}
+  {% for o in page.items %}
+    <tr>
+      <td>{{ o.store_id }}</td>
+      <td><strong>{{ o.name }}</strong></td>
+      <td>{{ o.processed_at.isoformat() if o.processed_at else '—' }}</td>
+      <td>
+        {% if o.financial_status %}<span class="pill">{{ o.financial_status.value }}</span>{% endif %}
+        {% if o.fulfillment_status %}<span class="pill">{{ o.fulfillment_status.value }}</span>{% endif %}
+      </td>
+      <td class="num">{{ o.total_price }}</td>
+      <td>{{ o.currency_code }}</td>
+    </tr>
+  {% endfor %}
+{% endif %}
