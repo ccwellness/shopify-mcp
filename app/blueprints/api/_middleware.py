@@ -1,10 +1,13 @@
-"""Bearer auth (before_request) + audit logging (after_request) for /api/*.
+"""Bearer auth (before_request) + audit logging (after_request).
 
-Wired onto `app.blueprints.api.bp` in that package's `__init__.py`. Both
-hooks read the route's auth_service / audit_service from
-`current_app.extensions`. The Container assembles those at app-build time.
+Shared by `/api/*` (REST) and `/graphql` (Strawberry). Both hooks read
+their service handles from `current_app.extensions`. The Container
+assembles those at app-build time.
 
 Design notes:
+- `authenticate` is surface-agnostic — same bearer check for any caller.
+- `make_audit_hook(surface)` returns a per-surface `after_request` so
+  the audit row records `rest` vs `graphql` correctly.
 - The audit row is written even on 401, so failed-auth attempts are
   recorded with caller_identity='anonymous'. (TR-6 — every API call.)
 - Latency uses `time.monotonic()` because wall-clock can jump.
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Any
@@ -38,7 +42,7 @@ def _services() -> tuple[AuthService | None, AuditService | None]:
 
 
 def authenticate() -> tuple[Response, int] | None:
-    """before_request: enforce bearer auth on every /api/* route."""
+    """before_request: enforce bearer auth. Reused by REST and GraphQL."""
     g.api_token = None
     g.setdefault(_REQUEST_START_KEY, time.monotonic())
 
@@ -60,31 +64,39 @@ def authenticate() -> tuple[Response, int] | None:
     return None
 
 
-def audit(response: Response) -> Response:
-    """after_request: write one row to api_audit_log per call (TR-6)."""
-    _, audit_service = _services()
-    if audit_service is None:
+def make_audit_hook(surface: ApiSurface) -> Callable[[Response], Response]:
+    """Return an after_request hook that records `surface` on every row."""
+
+    def audit(response: Response) -> Response:
+        _, audit_service = _services()
+        if audit_service is None:
+            return response
+
+        start = g.get(_REQUEST_START_KEY)
+        latency_ms = int((time.monotonic() - start) * 1000) if start else None
+        token = g.get("api_token")
+        caller_identity = token.name if token else "anonymous"
+        store_id = token.store_id if token else None
+        params: dict[str, Any] = {k: request.args.getlist(k) for k in request.args}
+
+        try:
+            audit_service.record(
+                caller_identity=caller_identity,
+                store_id=store_id,
+                surface=surface.value,
+                route_or_tool=request.path,
+                params=params,
+                status_code=response.status_code,
+                latency_ms=latency_ms,
+                request_id=request.headers.get("X-Request-Id"),
+                ts=datetime.now(tz=UTC),
+            )
+        except Exception:  # noqa: BLE001 — audit must never break the response
+            _log.exception("api_audit_log write failed for %s", request.path)
         return response
 
-    start = g.get(_REQUEST_START_KEY)
-    latency_ms = int((time.monotonic() - start) * 1000) if start else None
-    token = g.get("api_token")
-    caller_identity = token.name if token else "anonymous"
-    store_id = token.store_id if token else None
-    params: dict[str, Any] = {k: request.args.getlist(k) for k in request.args}
+    return audit
 
-    try:
-        audit_service.record(
-            caller_identity=caller_identity,
-            store_id=store_id,
-            surface=ApiSurface.REST.value,
-            route_or_tool=request.path,
-            params=params,
-            status_code=response.status_code,
-            latency_ms=latency_ms,
-            request_id=request.headers.get("X-Request-Id"),
-            ts=datetime.now(tz=UTC),
-        )
-    except Exception:  # noqa: BLE001 — audit must never break the response
-        _log.exception("api_audit_log write failed for %s", request.path)
-    return response
+
+# Back-compat: existing /api/* import. New code should use make_audit_hook.
+audit = make_audit_hook(ApiSurface.REST)

@@ -13,6 +13,7 @@ from flask import Flask
 
 from app.blueprints.api import bp as api_bp
 from app.blueprints.dashboard import bp as dashboard_bp
+from app.blueprints.graphql import bp as graphql_bp
 from app.blueprints.webhooks import bp as webhooks_bp
 from app.cli import api_cli, shopify_cli, sync_cli
 from app.container import Container
@@ -34,6 +35,7 @@ def create_app(*, container: Container | None = None) -> Flask:
     app.extensions["order_query_service"] = container.order_query_service()
     app.extensions["inventory_reporting_service"] = container.inventory_reporting_service()
     app.extensions["store_comparison_service"] = container.store_comparison_service()
+    app.extensions["store_query_service"] = container.store_query_service()
 
     # Shopify-facing services are only wired if at least one store has real
     # creds — keeps tests / dev-without-`.env` paths working.
@@ -44,6 +46,7 @@ def create_app(*, container: Container | None = None) -> Flask:
 
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(graphql_bp)
     app.register_blueprint(dashboard_bp)
     app.cli.add_command(sync_cli)
     app.cli.add_command(shopify_cli)
