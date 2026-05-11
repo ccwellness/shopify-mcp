@@ -412,6 +412,46 @@ class OrderAggregate:
     status_counts: dict[FinancialStatus, int]
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StoreComparisonRow:
+    """One store's slice of a cross-store comparison.
+
+    `paid_revenue` and `units_sold` are paid-orders-only (mirroring
+    `OrderAggregate.revenue` / `OrderAggregate.units`); `refunds_total`
+    is the sum of refunds *created* in the same window — independent
+    of the order's processed_at, so a refund issued today for an order
+    placed last month is attributed to today's window.
+
+    `net_revenue` = `paid_revenue` − `refunds_total`. It is the most
+    common headline metric for cross-store comparisons.
+    """
+
+    store_id: StoreId
+    store_key: str
+    order_count: int
+    paid_revenue: Money
+    refunds_total: Money
+    net_revenue: Money
+    units_sold: int
+    currency_code: str | None
+    status_counts: dict[FinancialStatus, int]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class StoreComparison:
+    """Side-by-side rollup over a `[since, until]` window.
+
+    `currency_warning` is True when the rows span more than one currency;
+    callers should surface this rather than silently summing numbers in
+    different denominations.
+    """
+
+    since: datetime
+    until: datetime
+    rows: tuple[StoreComparisonRow, ...]
+    currency_warning: bool
+
+
 # ---------------------------------------------------------------------------
 # API auth + audit (TR-4, TR-6)
 # ---------------------------------------------------------------------------
