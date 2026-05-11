@@ -25,6 +25,7 @@ from tests.fakes.repositories import (
     InMemoryLocationRepository,
     InMemoryOrderRepository,
     InMemoryProductRepository,
+    InMemoryRefundRepository,
     InMemoryStoreRepository,
     InMemorySubscriptionRepository,
     InMemorySyncStateRepository,
@@ -43,6 +44,7 @@ class InMemoryUnitOfWork:
         self.orders = InMemoryOrderRepository(db)
         self.products = InMemoryProductRepository(db)
         self.inventory = InMemoryInventoryRepository(db)
+        self.refunds = InMemoryRefundRepository(db)
         self.subscriptions = InMemorySubscriptionRepository(db)
         self.analytics = InMemoryAnalyticsRepository(db)
         self.sync_state = InMemorySyncStateRepository(db)

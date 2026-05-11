@@ -36,12 +36,15 @@ from app.domain.models import (
     InventoryLevel,
     Location,
     LocationId,
+    Money,
     Order,
     OrderAggregate,
     OrderId,
     Page,
     Product,
     ProductId,
+    Refund,
+    RefundId,
     SessionsDay,
     Store,
     StoreId,
@@ -192,6 +195,27 @@ class InventoryRepository(Protocol):
 
 
 @runtime_checkable
+class RefundRepository(Protocol):
+    """Refunds — pulled by a dedicated sync, not the bulk-orders flow.
+
+    `created_at` is the Shopify-side timestamp; reporting uses it to
+    deduct refunds in the window they happened.
+    """
+
+    def get_by_gid(self, store_id: StoreId, gid: str) -> Refund | None: ...
+
+    def list_for_order(self, order_id: OrderId) -> tuple[Refund, ...]: ...
+
+    def list_in_window(
+        self, store_id: StoreId, since: datetime, until: datetime
+    ) -> tuple[Refund, ...]: ...
+
+    def sum_in_window(self, store_id: StoreId, since: datetime, until: datetime) -> Money: ...
+
+    def upsert(self, refund: Refund) -> RefundId: ...
+
+
+@runtime_checkable
 class SubscriptionRepository(Protocol):
     def get(self, contract_id: SubscriptionContractId) -> SubscriptionContract | None: ...
 
@@ -305,6 +329,7 @@ class UnitOfWork(Protocol):
     orders: OrderRepository
     products: ProductRepository
     inventory: InventoryRepository
+    refunds: RefundRepository
     subscriptions: SubscriptionRepository
     analytics: AnalyticsRepository
     sync_state: SyncStateRepository

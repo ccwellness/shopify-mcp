@@ -21,6 +21,7 @@ from app.db.orm.order import (
     OrderShippingAddressRow,
 )
 from app.db.orm.product import ProductRow, VariantRow
+from app.db.orm.refund import RefundRow
 from app.db.orm.store import StoreRow
 from app.db.orm.subscription import SubscriptionContractRow
 from app.db.orm.sync_state import SyncStateRowOrm
@@ -40,6 +41,7 @@ __all__ = [
     "OrderRow",
     "OrderShippingAddressRow",
     "ProductRow",
+    "RefundRow",
     "SessionsDayRow",
     "StoreRow",
     "SubscriptionContractRow",

@@ -54,6 +54,7 @@ OrderId = NewType("OrderId", int)
 OrderLineItemId = NewType("OrderLineItemId", int)
 FulfillmentId = NewType("FulfillmentId", int)
 SubscriptionContractId = NewType("SubscriptionContractId", int)
+RefundId = NewType("RefundId", int)
 ApiTokenId = NewType("ApiTokenId", int)
 ApiAuditLogId = NewType("ApiAuditLogId", int)
 
@@ -354,6 +355,31 @@ class SyncStateRow:
     last_error: str | None
     last_error_at: datetime | None
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Refunds (separate from Order — pulled by a dedicated sync, not bulk)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Refund:
+    """One Shopify refund. Multiple refunds can exist per order (partial refunds).
+
+    `created_at` is the Shopify timestamp — used by reporting to deduct
+    refunds in the window they happened (independent of the order's
+    `processed_at`).
+    """
+
+    id: RefundId
+    store_id: StoreId
+    order_id: OrderId
+    gid: str
+    legacy_id: int
+    amount: Money
+    currency_code: str
+    note: str | None
+    created_at: datetime
 
 
 # ---------------------------------------------------------------------------

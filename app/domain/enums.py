@@ -107,6 +107,7 @@ class SyncResource(StrEnum):
     LOCATIONS = "locations"
     SESSIONS = "sessions"
     SUBSCRIPTIONS = "subscriptions"
+    REFUNDS = "refunds"
 
 
 class WebhookProcessingStatus(StrEnum):

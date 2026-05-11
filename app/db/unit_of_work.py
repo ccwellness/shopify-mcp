@@ -28,6 +28,7 @@ from app.domain.repositories import (
     LocationRepository,
     OrderRepository,
     ProductRepository,
+    RefundRepository,
     StoreRepository,
     SubscriptionRepository,
     SyncStateRepository,
@@ -41,6 +42,7 @@ from app.repositories.inventory import SqlAlchemyInventoryRepository
 from app.repositories.locations import SqlAlchemyLocationRepository
 from app.repositories.orders import SqlAlchemyOrderRepository
 from app.repositories.products import SqlAlchemyProductRepository
+from app.repositories.refunds import SqlAlchemyRefundRepository
 from app.repositories.stores import SqlAlchemyStoreRepository
 from app.repositories.subscriptions import SqlAlchemySubscriptionRepository
 from app.repositories.sync_state import SqlAlchemySyncStateRepository
@@ -63,6 +65,7 @@ class SqlAlchemyUnitOfWork:
         self.orders: OrderRepository
         self.products: ProductRepository
         self.inventory: InventoryRepository
+        self.refunds: RefundRepository
         self.subscriptions: SubscriptionRepository
         self.analytics: AnalyticsRepository
         self.sync_state: SyncStateRepository
@@ -78,6 +81,7 @@ class SqlAlchemyUnitOfWork:
         self.orders = SqlAlchemyOrderRepository(self._session)
         self.products = SqlAlchemyProductRepository(self._session)
         self.inventory = SqlAlchemyInventoryRepository(self._session)
+        self.refunds = SqlAlchemyRefundRepository(self._session)
         self.subscriptions = SqlAlchemySubscriptionRepository(self._session)
         self.analytics = SqlAlchemyAnalyticsRepository(self._session)
         self.sync_state = SqlAlchemySyncStateRepository(self._session)

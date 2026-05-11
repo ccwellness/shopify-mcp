@@ -80,6 +80,9 @@ def sync_init(store_key: str | None, orders_since_days: int) -> None:
         click.echo(f"  inventory: {inv.upserted} items upserted")
         order = svc.sync_orders(key, since=since)
         click.echo(f"  orders:    {order.upserted} upserted")
+        # Refunds depend on orders being present locally — must run after.
+        refunds = svc.sync_refunds(key, since=since)
+        click.echo(f"  refunds:   {refunds.upserted} upserted")
 
 
 @sync_cli.command("orders")
@@ -131,6 +134,27 @@ def sync_inventory_cmd(store_key: str) -> None:
     svc = _service()
     result = svc.sync_inventory(store_key)
     click.echo(f"{result.store_key}: {result.upserted} inventory items upserted")
+
+
+@sync_cli.command("refunds")
+@click.option("--store", "store_key", required=True)
+@click.option(
+    "--since-days",
+    default=None,
+    type=int,
+    help="Only walk orders whose processed_at >= now() - N days (default: all-time).",
+)
+def sync_refunds_cmd(store_key: str, since_days: int | None) -> None:
+    """Pull refunds for every locally-stored refunded order in `store_key`.
+
+    Walks orders with financial_status in (refunded, partially_refunded);
+    one GraphQL call per such order. Idempotent — safe to re-run.
+    """
+    svc = _service()
+    since = datetime.now(tz=UTC) - timedelta(days=since_days) if since_days is not None else None
+    result = svc.sync_refunds(store_key, since=since)
+    suffix = f" (since {since.date()})" if since is not None else ""
+    click.echo(f"{result.store_key}: {result.upserted} refunds upserted{suffix}")
 
 
 def _auth_service() -> AuthService:

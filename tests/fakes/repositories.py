@@ -34,12 +34,15 @@ from app.domain.models import (
     InventoryLevelId,
     Location,
     LocationId,
+    Money,
     Order,
     OrderAggregate,
     OrderId,
     Page,
     Product,
     ProductId,
+    Refund,
+    RefundId,
     SessionsDay,
     Store,
     StoreId,
@@ -96,9 +99,11 @@ class InMemoryDatabase:
     webhook_events: dict[int, _WebhookEventState] = field(default_factory=dict)
     api_tokens: dict[ApiTokenId, ApiToken] = field(default_factory=dict)
     api_audit_log: list[ApiAuditLogEntry] = field(default_factory=list)
+    refunds: dict[RefundId, Refund] = field(default_factory=dict)
     _webhook_id_seq: count[int] = field(default_factory=lambda: count(1))
     _api_token_id_seq: count[int] = field(default_factory=lambda: count(1))
     _audit_log_id_seq: count[int] = field(default_factory=lambda: count(1))
+    _refund_id_seq: count[int] = field(default_factory=lambda: count(1))
 
 
 def _store_match(store_id: StoreId, allowed: tuple[StoreId, ...] | None) -> bool:
@@ -715,3 +720,78 @@ class InMemoryApiAuditLogRepository:
 
     def list_recent(self, *, limit: int = 100) -> tuple[ApiAuditLogEntry, ...]:
         return tuple(reversed(self._db.api_audit_log))[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Refunds
+# ---------------------------------------------------------------------------
+
+
+class InMemoryRefundRepository:
+    def __init__(self, db: InMemoryDatabase) -> None:
+        self._db = db
+
+    def get_by_gid(self, store_id: StoreId, gid: str) -> Refund | None:
+        for r in self._db.refunds.values():
+            if r.store_id == store_id and r.gid == gid:
+                return r
+        return None
+
+    def list_for_order(self, order_id: OrderId) -> tuple[Refund, ...]:
+        return tuple(
+            sorted(
+                (r for r in self._db.refunds.values() if r.order_id == order_id),
+                key=lambda r: r.created_at,
+            )
+        )
+
+    def list_in_window(
+        self, store_id: StoreId, since: datetime, until: datetime
+    ) -> tuple[Refund, ...]:
+        return tuple(
+            sorted(
+                (
+                    r
+                    for r in self._db.refunds.values()
+                    if r.store_id == store_id and since <= r.created_at < until
+                ),
+                key=lambda r: r.created_at,
+            )
+        )
+
+    def sum_in_window(self, store_id: StoreId, since: datetime, until: datetime) -> Money:
+        total = Decimal("0")
+        for r in self._db.refunds.values():
+            if r.store_id == store_id and since <= r.created_at < until:
+                total += r.amount
+        return total
+
+    def upsert(self, refund: Refund) -> RefundId:
+        # Replace by (store_id, gid) if exists.
+        for existing_id, existing in self._db.refunds.items():
+            if existing.store_id == refund.store_id and existing.gid == refund.gid:
+                self._db.refunds[existing_id] = Refund(
+                    id=existing_id,
+                    store_id=refund.store_id,
+                    order_id=refund.order_id,
+                    gid=refund.gid,
+                    legacy_id=refund.legacy_id,
+                    amount=refund.amount,
+                    currency_code=refund.currency_code,
+                    note=refund.note,
+                    created_at=refund.created_at,
+                )
+                return existing_id
+        new_id = RefundId(next(self._db._refund_id_seq))  # noqa: SLF001
+        self._db.refunds[new_id] = Refund(
+            id=new_id,
+            store_id=refund.store_id,
+            order_id=refund.order_id,
+            gid=refund.gid,
+            legacy_id=refund.legacy_id,
+            amount=refund.amount,
+            currency_code=refund.currency_code,
+            note=refund.note,
+            created_at=refund.created_at,
+        )
+        return new_id

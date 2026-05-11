@@ -22,9 +22,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from app.domain.enums import SyncResource
-from app.domain.models import Location, LocationId, StoreId, SyncStateRow
+from app.domain.enums import FinancialStatus, SyncResource
+from app.domain.models import Location, LocationId, OrderId, StoreId, SyncStateRow
 from app.domain.repositories import UnitOfWork
+from app.domain.specs import OrderSpec
 from app.services._store_resolver import ensure_store
 from app.shopify.bulk import BulkOperationsClient
 from app.shopify.client import ShopifyClient
@@ -34,6 +35,7 @@ from app.shopify.normalizers.customers_bulk import normalize_customer_bulk
 from app.shopify.normalizers.inventory_paginated import normalize_inventory_item
 from app.shopify.normalizers.orders_bulk import normalize_order_bulk
 from app.shopify.normalizers.products_bulk import normalize_product_bulk
+from app.shopify.normalizers.refunds import normalize_refund_payload
 
 _ORDER_BULK_QUERY_TEMPLATE = """
 {{
@@ -108,6 +110,22 @@ _ORDER_BULK_QUERY_TEMPLATE = """
   }}
 }}
 """
+
+_ORDER_REFUNDS_QUERY = """
+query OrderRefunds($id: ID!) {
+  order(id: $id) {
+    id
+    refunds {
+      id
+      legacyResourceId
+      note
+      createdAt
+      totalRefundedSet { shopMoney { amount currencyCode } }
+    }
+  }
+}
+"""
+
 
 _CUSTOMER_BULK_QUERY_TEMPLATE = """
 {{
@@ -298,6 +316,87 @@ class SyncService:
 
         self._mark_sync_complete(store_id, SyncResource.ORDERS)
         return SyncResult(store_key=store_key, resource=SyncResource.ORDERS, upserted=count)
+
+    # -----------------------------------------------------------------------
+    # Refunds (per-order GraphQL — bulk doesn't support plain list fields)
+    # -----------------------------------------------------------------------
+
+    def sync_refunds(
+        self,
+        store_key: str,
+        *,
+        since: datetime | None = None,
+        page_size: int = 100,
+    ) -> SyncResult:
+        """Pull refunds for every locally-stored refunded order updated since `since`.
+
+        Walks `orders` where financial_status ∈ (refunded, partially_refunded),
+        making one GraphQL `order(id) { refunds { ... } }` call per order. Cost
+        budget: ~10 throttle pts per order, well under the 1k Advanced bucket
+        for typical v1 volumes.
+        """
+        cfg = self._configs[store_key]
+        store_id = self._resolve_store_id(cfg)
+
+        refund_count = self._sync_refunds_for_status(
+            store_key, store_id, FinancialStatus.REFUNDED, since, page_size
+        )
+        refund_count += self._sync_refunds_for_status(
+            store_key, store_id, FinancialStatus.PARTIALLY_REFUNDED, since, page_size
+        )
+
+        self._mark_sync_complete(store_id, SyncResource.REFUNDS)
+        return SyncResult(store_key=store_key, resource=SyncResource.REFUNDS, upserted=refund_count)
+
+    def _sync_refunds_for_status(
+        self,
+        store_key: str,
+        store_id: StoreId,
+        status: FinancialStatus,
+        since: datetime | None,
+        page_size: int,
+    ) -> int:
+        upserted = 0
+        cursor: str | None = None
+        while True:
+            with self._uow_factory() as uow:
+                page = uow.orders.find(
+                    OrderSpec(
+                        store_ids=(store_id,),
+                        financial_status=status,
+                        since=since,
+                    ),
+                    limit=page_size,
+                    cursor=cursor,
+                )
+            for order in page.items:
+                upserted += self._fetch_and_upsert_refunds(store_key, store_id, order.id, order.gid)
+            if page.next_cursor is None:
+                return upserted
+            cursor = page.next_cursor
+
+    def _fetch_and_upsert_refunds(
+        self,
+        store_key: str,
+        store_id: StoreId,
+        order_id: OrderId,
+        order_gid: str,
+    ) -> int:
+        data = self._client.query(
+            store_key,
+            _ORDER_REFUNDS_QUERY,
+            variables={"id": order_gid},
+        )
+        order_node = data.get("order") or {}
+        refunds = order_node.get("refunds") or []
+        if not refunds:
+            return 0
+        with self._uow_factory() as uow:
+            for r in refunds:
+                refund = normalize_refund_payload(store_id, order_id, r)
+                uow.refunds.upsert(refund)
+            uow.commit()
+        return len(refunds)
 
     # -----------------------------------------------------------------------
     # Customers (Bulk)

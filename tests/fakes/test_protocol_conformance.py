@@ -19,6 +19,7 @@ from app.domain.repositories import (
     LocationRepository,
     OrderRepository,
     ProductRepository,
+    RefundRepository,
     StoreRepository,
     SubscriptionRepository,
     SyncStateRepository,
@@ -64,6 +65,10 @@ def test_product_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
 
 def test_inventory_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
     assert isinstance(uow.inventory, InventoryRepository)
+
+
+def test_refund_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
+    assert isinstance(uow.refunds, RefundRepository)
 
 
 def test_subscription_repo_satisfies_protocol(uow: InMemoryUnitOfWork) -> None:
