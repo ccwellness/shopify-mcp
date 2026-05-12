@@ -17,7 +17,7 @@ Replace `TBD` with confirmed values. Date the entry when you fill it in.
 | Shop domain | `lubelife.myshopify.com` | known | — |
 | Shopify Plus? | **No --- plan is `Advanced`** (probe overrides earlier user statement) | Probe `shop.plan.shopifyPlus = False` | 2026-04-30 |
 | Subscription provider | **OrderGroove** (third-party) | User confirmation (2026-04-29) | 2026-04-29 |
-| OrderGroove integration depth | TBD — does it write to native `SubscriptionContract` or only its own API? | Check OrderGroove app config in admin | TBD |
+| OrderGroove integration depth | **OrderGroove-only — does NOT write to native `SubscriptionContract`.** Probe `{ subscriptionContracts(first: 5) }` returned 0 edges with `hasNextPage: false` (no `ACCESS_DENIED` so `read_own_subscription_contracts` scope is present). OrderGrooveProvider must use OrderGroove's REST API; OrderGroove API credentials needed in `.env` before building the adapter. | Probe via `ShopifyClient` against the Admin GraphQL API | 2026-05-12 |
 | Location count | **3 in Shopify, but only 1 operationally** --- all share address `24903 Avenue Kearny, Santa Clarita, CA 91355`. Only `Kearny` has `fulfillsOnlineOrders=true` and `shipsInventory=true`; `CC Wellness LLC` and `Kearny - Do Not Use` are stale duplicates that were never deactivated. The connector ingests all 3 (Shopify is source of truth) but service-layer reports filter on `fulfillsOnlineOrders OR shipsInventory`. | Probe `locations` connection with address + flags | 2026-04-30 |
 | Analytics tooling | **Shopify native + GA4 + Meta Pixel** | User confirmation (2026-04-29) | 2026-04-29 |
 | Volume — orders/day | **~26/day** (788 in last 30d) | Probe `ordersCount` | 2026-04-30 |
@@ -38,7 +38,7 @@ Replace `TBD` with confirmed values. Date the entry when you fill it in.
 | Shopify handle / `myshopify.com` | **`system-jo.myshopify.com`** | OAuth 404 on `shopjo.myshopify.com` led to user-supplied actual handle | 2026-04-30 |
 | Shopify Plus? | **No --- plan is `Advanced`** (same as lubelife; pattern: all CCW stores were originally reported as Plus but probes show Advanced) | Probe `shop.plan.shopifyPlus = False` | 2026-04-30 |
 | Subscription provider | **OrderGroove** (third-party) | User confirmation (2026-04-29) | 2026-04-29 |
-| OrderGroove integration depth | TBD — native `SubscriptionContract` vs OrderGroove API only | Check OrderGroove app config | TBD |
+| OrderGroove integration depth | **OrderGroove-only — same probe result as lubelife** (0 edges, no `ACCESS_DENIED`). Both stores need OrderGroove REST API credentials before the adapter can be built. | Probe via `ShopifyClient` against the Admin GraphQL API | 2026-05-12 |
 | Location count | **3 in Shopify, ~2 effective** --- `Avenue Kearny, CA` (online+ships, Kearny CA address) is primary; `Consumer Events - Virtual Location` (Las Vegas NV, 3000 S Las Vegas Blvd) is a legitimate event/popup location; `Warehouse` (online only, same Kearny address) is a probable stale dupe. | Probe `locations` connection with address + flags | 2026-04-30 |
 | Analytics tooling | **Shopify native + GA4 + Meta Pixel** | User confirmation (2026-04-29) | 2026-04-29 |
 | Volume — orders/day | **~10/day** (299 in last 30d) | Probe `ordersCount` | 2026-04-30 |

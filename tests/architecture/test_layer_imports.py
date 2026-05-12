@@ -21,12 +21,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+MCP_ROOT = ROOT / "mcp_server"
 
 COMPOSITION_ROOT: frozenset[Path] = frozenset(
     {
         APP_ROOT / "__init__.py",
         APP_ROOT / "cli.py",
         APP_ROOT / "container.py",
+        # The MCP server's __init__.py is documentation only; the entrypoint
+        # `__main__.py` wires the lazy Container singleton.
+        MCP_ROOT / "__main__.py",
+        MCP_ROOT / "server.py",
     }
 )
 
@@ -194,5 +199,29 @@ def test_blueprints_call_services_not_repositories() -> None:
     assert not vs, _format(
         "L5 Blueprints must go through services — "
         "no direct sqlalchemy / db / repositories imports.",
+        vs,
+    )
+
+
+# ---------------------------------------------------------------------------
+# L5 Presentation — MCP server. Same rules as blueprints: services only,
+# never sqlalchemy / app.db / app.repositories. The composition root files
+# (mcp_server/__main__.py, mcp_server/server.py) are exempt.
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_server_calls_services_not_repositories() -> None:
+    files = sorted(p for p in MCP_ROOT.rglob("*.py") if "__pycache__" not in p.parts)
+    banned = (
+        "flask",
+        "sqlalchemy",
+        "app.db",
+        "app.repositories",
+        "app.blueprints",
+    )
+    vs = _violations(files, banned)
+    assert not vs, _format(
+        "L5 mcp_server must go through services — "
+        "no flask / sqlalchemy / db / repositories / blueprints imports.",
         vs,
     )
