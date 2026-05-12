@@ -27,6 +27,7 @@ from app.db.engine import get_session_factory
 from app.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.domain.repositories import UnitOfWork
 from app.jobs.queue import InlineJobQueue
+from app.services.analytics import AnalyticsService
 from app.services.audit import AuditService
 from app.services.auth import AuthService
 from app.services.inventory_reporting import InventoryReportingService
@@ -103,6 +104,11 @@ class Container(containers.DeclarativeContainer):
 
     store_query_service = providers.Factory(
         StoreQueryService,
+        uow_factory=uow_factory,
+    )
+
+    analytics_service = providers.Factory(
+        AnalyticsService,
         uow_factory=uow_factory,
     )
 

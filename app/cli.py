@@ -22,6 +22,7 @@ from flask import current_app
 from flask.cli import AppGroup
 
 from app.domain.models import ApiTokenId, StoreId
+from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService
 from app.services.sync import SyncService
 from app.shopify import webhook_admin
@@ -30,6 +31,7 @@ from app.shopify.client import ShopifyClient
 sync_cli = AppGroup("sync", help="Sync data from Shopify into Postgres.")
 shopify_cli = AppGroup("shopify", help="Manage Shopify-side resources (webhooks, etc.).")
 api_cli = AppGroup("api", help="Manage internal API bearer tokens (TR-4).")
+analytics_cli = AppGroup("analytics", help="Compute analytics rollups from synced data (TR-31).")
 
 
 def _service() -> SyncService:
@@ -84,8 +86,22 @@ def sync_init(store_key: str | None, orders_since_days: int) -> None:
         refunds = svc.sync_refunds(key, since=since)
         click.echo(f"  refunds:   {refunds.upserted} upserted")
         # Sessions are independent of the order/catalog data; pull last N days.
-        sessions = svc.sync_sessions(key, days_back=min(orders_since_days, 30))
+        sessions_days = min(orders_since_days, 30)
+        sessions = svc.sync_sessions(key, days_back=sessions_days)
         click.echo(f"  sessions:  {sessions.upserted} sessions_daily rows upserted")
+        # Now that sessions + orders are present, roll up the KPI window.
+        store_id = _store_id_for_key(key)
+        if store_id is not None:
+            today = datetime.now(tz=UTC).date()
+            kpi = _analytics_service().compute_kpi_window(
+                store_id,
+                since=today - timedelta(days=sessions_days),
+                until=today - timedelta(days=1),
+            )
+            click.echo(
+                f"  analytics: {kpi.days_computed} day(s) computed "
+                f"(skipped {kpi.days_skipped_no_sessions} for missing sessions)"
+            )
 
 
 @sync_cli.command("orders")
@@ -184,6 +200,62 @@ def _auth_service() -> AuthService:
     if svc is None:
         raise click.ClickException("auth_service is not wired on this app")
     return svc  # type: ignore[no-any-return]
+
+
+def _analytics_service() -> AnalyticsService:
+    svc = current_app.extensions.get("analytics_service")
+    if svc is None:
+        raise click.ClickException("analytics_service is not wired on this app")
+    return svc  # type: ignore[no-any-return]
+
+
+def _store_id_for_key(store_key: str) -> StoreId | None:
+    """Resolve a `store_key` to the numeric `StoreId` via the store-query service.
+
+    Returns None if no active store has that key (typical right after a
+    fresh sync_init on a brand-new DB where the store hasn't been
+    ensured yet — but `_resolve_store_id` runs as part of `sync_locations`
+    so by the time analytics rolls up, the row exists).
+    """
+    svc = current_app.extensions.get("store_query_service")
+    if svc is None:
+        return None
+    for s in svc.list_active():
+        if s.store_key == store_key:
+            return s.id
+    return None
+
+
+@analytics_cli.command("compute")
+@click.option("--store-id", "store_id_raw", required=True, type=int, help="Store id (numeric).")
+@click.option(
+    "--since",
+    "since_raw",
+    required=True,
+    help="Start date, inclusive (YYYY-MM-DD).",
+)
+@click.option(
+    "--until",
+    "until_raw",
+    required=True,
+    help="End date, inclusive (YYYY-MM-DD).",
+)
+def analytics_compute_cmd(store_id_raw: int, since_raw: str, until_raw: str) -> None:
+    """Compute analytics_kpi_daily for every day in [since, until] (inclusive)."""
+    from datetime import date as _date  # noqa: PLC0415
+
+    try:
+        since = _date.fromisoformat(since_raw)
+        until = _date.fromisoformat(until_raw)
+    except ValueError as exc:
+        raise click.ClickException(f"bad date: {exc}") from exc
+    svc = _analytics_service()
+    result = svc.compute_kpi_window(StoreId(store_id_raw), since=since, until=until)
+    click.echo(
+        f"store_id={int(result.store_id)}  "
+        f"computed={result.days_computed} day(s)  "
+        f"skipped(no_sessions)={result.days_skipped_no_sessions}"
+    )
 
 
 @api_cli.command("mint-token")
