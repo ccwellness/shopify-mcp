@@ -9,14 +9,25 @@ page with a flash-style error rather than returning JSON.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from typing import Any
 
-from flask import current_app, render_template, request
+from flask import (
+    current_app,
+    flash,
+    get_flashed_messages,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from werkzeug.wrappers import Response as WerkzeugResponse
 
 from app.blueprints.dashboard import bp
 from app.domain.enums import FinancialStatus
-from app.domain.models import LocationId, StoreId
+from app.domain.models import ApiTokenId, LocationId, StoreId
 from app.domain.specs import OrderSpec
+from app.services.auth import AuthService
 from app.services.inventory_reporting import (
     DEFAULT_LIMIT as INV_DEFAULT_LIMIT,
 )
@@ -27,6 +38,7 @@ from app.services.inventory_reporting import (
 from app.services.order_query import DEFAULT_LIMIT as ORDER_DEFAULT_LIMIT
 from app.services.order_query import OrderQueryService
 from app.services.store_compare import StoreComparisonService
+from app.services.store_query import StoreQueryService
 
 
 def _store_comparison_service() -> StoreComparisonService:
@@ -47,6 +59,20 @@ def _inventory_reporting_service() -> InventoryReportingService:
     svc = current_app.extensions.get("inventory_reporting_service")
     if svc is None:
         raise RuntimeError("inventory_reporting_service is not wired on this app")
+    return svc  # type: ignore[no-any-return]
+
+
+def _auth_service() -> AuthService:
+    svc = current_app.extensions.get("auth_service")
+    if svc is None:
+        raise RuntimeError("auth_service is not wired on this app")
+    return svc  # type: ignore[no-any-return]
+
+
+def _store_query_service() -> StoreQueryService:
+    svc = current_app.extensions.get("store_query_service")
+    if svc is None:
+        raise RuntimeError("store_query_service is not wired on this app")
     return svc  # type: ignore[no-any-return]
 
 
@@ -250,3 +276,67 @@ def low_stock() -> str:
         page=page,
         errors=errors,
     )
+
+
+# ---------------------------------------------------------------------------
+# Admin — API token management (TR-4)
+# ---------------------------------------------------------------------------
+
+
+@bp.get("/admin/tokens")
+def tokens_list() -> str:
+    """List active tokens + mint form + revealed-once plaintext (via flash)."""
+    tokens = _auth_service().list_active()
+    stores = _store_query_service().list_active()
+    # Plaintext is flashed once after mint; consume here so it appears once.
+    revealed = get_flashed_messages(category_filter=["minted_plaintext"])
+    return render_template(
+        "dashboard/tokens.html",
+        tokens=tokens,
+        stores=stores,
+        revealed_plaintext=revealed[0] if revealed else None,
+        revealed_name=(get_flashed_messages(category_filter=["minted_name"]) or [None])[0],
+        errors=get_flashed_messages(category_filter=["error"]),
+    )
+
+
+@bp.post("/admin/tokens/mint")
+def tokens_mint() -> WerkzeugResponse:
+    name = (request.form.get("name") or "").strip()
+    store_id_raw = (request.form.get("store_id") or "").strip()
+    expires_days_raw = (request.form.get("expires_days") or "").strip()
+
+    if not name:
+        flash("name is required", category="error")
+        return redirect(url_for("dashboard.tokens_list"), code=HTTPStatus.SEE_OTHER)
+
+    store_id: StoreId | None = None
+    if store_id_raw:
+        try:
+            store_id = StoreId(int(store_id_raw))
+        except ValueError:
+            flash(f"store_id must be an integer (got {store_id_raw!r})", category="error")
+            return redirect(url_for("dashboard.tokens_list"), code=HTTPStatus.SEE_OTHER)
+
+    expires_at: datetime | None = None
+    if expires_days_raw:
+        try:
+            days = int(expires_days_raw)
+        except ValueError:
+            flash(f"expires_days must be an integer (got {expires_days_raw!r})", category="error")
+            return redirect(url_for("dashboard.tokens_list"), code=HTTPStatus.SEE_OTHER)
+        if days <= 0:
+            flash("expires_days must be > 0", category="error")
+            return redirect(url_for("dashboard.tokens_list"), code=HTTPStatus.SEE_OTHER)
+        expires_at = datetime.now(tz=UTC) + timedelta(days=days)
+
+    _, plaintext = _auth_service().mint(name=name, store_id=store_id, expires_at=expires_at)
+    flash(plaintext, category="minted_plaintext")
+    flash(name, category="minted_name")
+    return redirect(url_for("dashboard.tokens_list"), code=HTTPStatus.SEE_OTHER)
+
+
+@bp.post("/admin/tokens/<int:token_id>/revoke")
+def tokens_revoke(token_id: int) -> WerkzeugResponse:
+    _auth_service().revoke(ApiTokenId(token_id))
+    return redirect(url_for("dashboard.tokens_list"), code=HTTPStatus.SEE_OTHER)

@@ -1,0 +1,88 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}API Tokens — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>API tokens</h1>
+  <p class="muted">Bearer tokens for the REST API and GraphQL gateway. Plaintext is shown <strong>once</strong> at mint time and never recoverable afterwards.</p>
+
+  {% if errors %}
+    <div class="warning">
+      {% for err in errors %}<p>{{ err }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if revealed_plaintext %}
+    <article style="border: 2px solid var(--pico-primary); padding: 1rem;">
+      <h3>Token minted — copy now</h3>
+      <p>This plaintext will not be shown again. If you lose it, mint a new one.</p>
+      <p>Name: <strong>{{ revealed_name }}</strong></p>
+      <pre><code>{{ revealed_plaintext }}</code></pre>
+      <p class="muted">Use it in a request as: <code>Authorization: Bearer {{ revealed_plaintext }}</code></p>
+    </article>
+  {% endif %}
+
+  <section>
+    <h2>Active tokens</h2>
+    {% if tokens %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Store scope</th>
+            <th>Created</th>
+            <th>Last used</th>
+            <th>Expires</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tokens %}
+            <tr>
+              <td>{{ t.id }}</td>
+              <td><strong>{{ t.name }}</strong></td>
+              <td>{{ t.store_id if t.store_id is not none else 'any' }}</td>
+              <td>{{ t.created_at.strftime('%Y-%m-%d') }}</td>
+              <td>{{ t.last_used_at.strftime('%Y-%m-%d %H:%M') if t.last_used_at else '—' }}</td>
+              <td>{{ t.expires_at.strftime('%Y-%m-%d') if t.expires_at else 'never' }}</td>
+              <td>
+                <form method="post" action="{{ url_for('dashboard.tokens_revoke', token_id=t.id) }}"
+                      style="margin: 0;"
+                      onsubmit="return confirm('Revoke token {{ t.name }} (id {{ t.id }})?');">
+                  <button type="submit" class="secondary" style="padding: 0.25rem 0.75rem;">Revoke</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No active tokens.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Mint new token</h2>
+    <form method="post" action="{{ url_for('dashboard.tokens_mint') }}" class="filters">
+      <label>
+        Name (required)
+        <input type="text" name="name" required placeholder="e.g. bi-readonly">
+      </label>
+      <label>
+        Store scope
+        <select name="store_id">
+          <option value="">(any — cross-store)</option>
+          {% for s in stores %}
+            <option value="{{ s.id }}">{{ s.store_key }} (id {{ s.id }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Expires in days (optional)
+        <input type="number" name="expires_days" min="1" placeholder="never">
+      </label>
+      <button type="submit">Mint token</button>
+    </form>
+  </section>
+{% endblock %}
