@@ -278,6 +278,14 @@ def test_graphql_requires_auth(unauthed_client: FlaskClient) -> None:
     assert resp.status_code == HTTPStatus.UNAUTHORIZED
 
 
+def test_graphql_get_loads_ide_without_auth(unauthed_client: FlaskClient) -> None:
+    # GET /graphql returns the GraphiQL UI HTML — no data leaks since all
+    # actual queries are POSTs that still require a bearer token.
+    resp = unauthed_client.get("/graphql", headers={"Accept": "text/html"})
+    assert resp.status_code == HTTPStatus.OK
+    assert b"graphiql" in resp.get_data().lower() or b"<!doctype html" in resp.get_data().lower()
+
+
 def test_graphql_writes_audit_row_with_graphql_surface(
     authed_client: FlaskClient, fake_uow: UnitOfWork
 ) -> None:
