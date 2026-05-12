@@ -38,6 +38,14 @@
         <li><a href="{{ url_for('dashboard.tokens_list') }}"
                {% if request.endpoint and request.endpoint.startswith('dashboard.tokens') %}aria-current="page"{% endif %}>
             Tokens</a></li>
+        {% if session.get('token_name') %}
+          <li class="muted"><small>{{ session.get('token_name') }}</small></li>
+          <li>
+            <form method="post" action="{{ url_for('dashboard.logout') }}" style="margin: 0;">
+              <button type="submit" class="secondary" style="padding: 0.25rem 0.75rem;">Sign out</button>
+            </form>
+          </li>
+        {% endif %}
       </ul>
     </nav>
   </header>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login — Shopify Connector</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+  <style>
+    main { max-width: 32rem; margin: 4rem auto; }
+    .warning { background: var(--pico-form-element-invalid-border-color); padding: 0.5rem 1rem; border-radius: 0.25rem; }
+    .muted { color: var(--pico-muted-color); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sign in</h1>
+    <p class="muted">Paste an API bearer token. Mint one via the CLI: <code>flask api mint-token --name=&lt;you&gt;</code></p>
+
+    {% if errors %}
+      <div class="warning">
+        {% for err in errors %}<p>{{ err }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('dashboard.login_submit') }}">
+      <label>
+        API token
+        <input type="password" name="token" required autofocus
+               placeholder="ccsc_..." autocomplete="off">
+      </label>
+      {% if next_url %}
+        <input type="hidden" name="next" value="{{ next_url }}">
+      {% endif %}
+      <button type="submit">Sign in</button>
+    </form>
+
+    <footer>
+      <small class="muted">Same tokens that authenticate the REST + GraphQL API.</small>
+    </footer>
+  </main>
+</body>
+</html>

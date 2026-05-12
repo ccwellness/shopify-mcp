@@ -118,3 +118,17 @@ def unauthed_client(app: Flask) -> Iterator[FlaskClient]:
     """Plain test_client with no auth — for negative-path tests."""
     with app.test_client() as c:
         yield c
+
+
+@pytest.fixture
+def dashboard_client(app: Flask, valid_token: str) -> Iterator[FlaskClient]:
+    """Test client with an active dashboard session (logged in via API token).
+
+    Posts /login with the minted plaintext, so subsequent requests carry the
+    signed session cookie. Reuses `valid_token`'s already-minted ApiToken
+    row — one less side-effect to set up per test.
+    """
+    with app.test_client() as c:
+        resp = c.post("/login", data={"token": valid_token})
+        assert resp.status_code in (302, 303), resp.get_data(as_text=True)
+        yield c

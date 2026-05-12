@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
+from urllib.parse import urlparse
 
 from flask import (
     current_app,
@@ -19,6 +20,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
 )
 from werkzeug.wrappers import Response as WerkzeugResponse
@@ -105,6 +107,87 @@ def _parse_store_ids(raw_values: list[str]) -> tuple[tuple[StoreId, ...] | None,
         except ValueError:
             return None, f"store_id must be an integer (got {v!r})"
     return tuple(out), None
+
+
+# ---------------------------------------------------------------------------
+# Session auth — gate every dashboard route behind a token-backed login
+# ---------------------------------------------------------------------------
+
+_OPEN_ENDPOINTS = {
+    "dashboard.login",
+    "dashboard.login_submit",
+    "dashboard.logout",
+    "dashboard.static",
+}
+
+
+def _safe_next(raw: str | None) -> str:
+    """Return `raw` only if it's a safe in-app relative URL; else `/`.
+
+    Defends against open-redirect attacks where a crafted `next=` param
+    points off-site (e.g. `next=//evil.example.com`). A safe value:
+      - starts with exactly one `/` (no `//` netloc, no scheme)
+      - has no scheme or netloc when parsed
+    """
+    fallback = url_for("dashboard.home")
+    if not raw:
+        return fallback
+    if not raw.startswith("/") or raw.startswith("//"):
+        return fallback
+    parsed = urlparse(raw)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    return raw
+
+
+@bp.before_request
+def _require_login() -> WerkzeugResponse | None:
+    """Gate every dashboard endpoint except login/logout behind session auth."""
+    if request.endpoint in _OPEN_ENDPOINTS:
+        return None
+    if session.get("token_id"):
+        return None
+    # Preserve the original target so post-login we send the user back.
+    next_url = request.full_path if request.method == "GET" else request.path
+    return redirect(url_for("dashboard.login", next=next_url), code=HTTPStatus.FOUND)
+
+
+@bp.get("/login")
+def login() -> str | WerkzeugResponse:
+    """Render the login form. If already logged in, bounce to next or home."""
+    if session.get("token_id"):
+        return redirect(_safe_next(request.args.get("next")), code=HTTPStatus.FOUND)
+    return render_template(
+        "dashboard/login.html",
+        next_url=request.args.get("next") or "",
+        errors=get_flashed_messages(category_filter=["login_error"]),
+    )
+
+
+@bp.post("/login")
+def login_submit() -> WerkzeugResponse:
+    plaintext = (request.form.get("token") or "").strip()
+    if not plaintext:
+        flash("token is required", category="login_error")
+        return redirect(url_for("dashboard.login"), code=HTTPStatus.SEE_OTHER)
+    token = _auth_service().validate(plaintext)
+    if token is None:
+        flash("invalid or expired token", category="login_error")
+        return redirect(url_for("dashboard.login"), code=HTTPStatus.SEE_OTHER)
+    session.clear()  # avoid session-fixation by minting a fresh session
+    session["token_id"] = int(token.id)
+    session["token_name"] = token.name
+    return redirect(
+        _safe_next(request.form.get("next") or request.args.get("next")),
+        code=HTTPStatus.SEE_OTHER,
+    )
+
+
+@bp.get("/logout")
+@bp.post("/logout")
+def logout() -> WerkzeugResponse:
+    session.clear()
+    return redirect(url_for("dashboard.login"), code=HTTPStatus.SEE_OTHER)
 
 
 # ---------------------------------------------------------------------------
