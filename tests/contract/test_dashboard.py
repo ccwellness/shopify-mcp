@@ -291,6 +291,53 @@ def test_low_stock_renders_with_no_data(dashboard_client: FlaskClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Analytics
+# ---------------------------------------------------------------------------
+
+
+def test_analytics_renders_empty_state(dashboard_client: FlaskClient) -> None:
+    resp = dashboard_client.get("/analytics?since=2026-05-09&until=2026-05-10")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "Daily KPIs" in body
+    assert "No rows for this window" in body
+
+
+def test_analytics_renders_with_data(dashboard_client: FlaskClient, seed: UnitOfWork) -> None:
+    # Pre-seed a kpi row for lubelife May 10 so the table has content.
+    from datetime import date  # noqa: PLC0415
+    from decimal import Decimal  # noqa: PLC0415
+
+    from app.domain.models import AnalyticsKpiDay  # noqa: PLC0415
+
+    with seed as uow:
+        uow.analytics.upsert_kpi_day(
+            AnalyticsKpiDay(
+                store_id=LUBELIFE,
+                date=date(2026, 5, 10),
+                sessions=1000,
+                orders=25,
+                units=50,
+                revenue=Decimal("500.00"),
+                conversion_rate=Decimal("0.0250"),
+                aov=Decimal("20.00"),
+                computed_at=datetime(2026, 5, 12, tzinfo=UTC),
+            )
+        )
+    body = dashboard_client.get("/analytics?since=2026-05-10&until=2026-05-10").get_data(
+        as_text=True
+    )
+    assert "500.00" in body
+    # Conversion rendered as percentage with 2 decimals.
+    assert "2.50%" in body
+
+
+def test_analytics_shows_error_on_bad_date(dashboard_client: FlaskClient) -> None:
+    body = dashboard_client.get("/analytics?since=notadate&until=2026-05-10").get_data(as_text=True)
+    assert "Invalid date" in body
+
+
+# ---------------------------------------------------------------------------
 # Cross-cutting — session gate + audit-log isolation
 # ---------------------------------------------------------------------------
 
@@ -299,7 +346,14 @@ def test_dashboard_routes_redirect_to_login_when_not_signed_in(
     unauthed_client: FlaskClient,
 ) -> None:
     # Without a logged-in session, every gated route 302s to /login.
-    for path in ("/", "/compare", "/orders", "/inventory/low-stock", "/admin/tokens"):
+    for path in (
+        "/",
+        "/compare",
+        "/orders",
+        "/inventory/low-stock",
+        "/analytics",
+        "/admin/tokens",
+    ):
         resp = unauthed_client.get(path)
         assert resp.status_code == HTTPStatus.FOUND, f"{path} returned {resp.status_code}"
         assert "/login" in resp.headers["Location"]

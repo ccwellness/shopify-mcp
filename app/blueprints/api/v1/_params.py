@@ -6,7 +6,7 @@ errorhandler converts that into a 400 with a helpful JSON body.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import TypeVar
@@ -36,6 +36,13 @@ def parse_datetime(field: str, raw: str) -> datetime:
         return datetime.fromisoformat(raw)
     except ValueError as exc:
         raise BadRequestError(f"{field} must be ISO 8601 datetime (got {raw!r})") from exc
+
+
+def parse_date(field: str, raw: str) -> date:
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise BadRequestError(f"{field} must be YYYY-MM-DD date (got {raw!r})") from exc
 
 
 def parse_decimal(field: str, raw: str) -> Decimal:

@@ -28,6 +28,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from app.domain.models import AnalyticsKpiDay, StoreId
 from app.domain.repositories import UnitOfWork
+from app.domain.specs import AnalyticsWindowSpec
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -72,6 +73,21 @@ class AnalyticsService:
             uow.analytics.upsert_kpi_day(row)
             uow.commit()
             return row
+
+    def list_kpis(
+        self,
+        *,
+        store_ids: tuple[StoreId, ...] | None = None,
+        since: date,
+        until: date,
+    ) -> tuple[AnalyticsKpiDay, ...]:
+        """Read every `analytics_kpi_daily` row in `[since, until]` (inclusive)
+        for the optional `store_ids` filter. Read-only path for REST / dashboard."""
+        if since > until:
+            raise ValueError("since must be <= until")
+        spec = AnalyticsWindowSpec(store_ids=store_ids, since=since, until=until)
+        with self._uow_factory() as uow:
+            return uow.analytics.list_kpis(spec)
 
     def compute_kpi_window(
         self, store_id: StoreId, *, since: date, until: date

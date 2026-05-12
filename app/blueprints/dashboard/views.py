@@ -8,7 +8,7 @@ page with a flash-style error rather than returning JSON.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
@@ -29,6 +29,7 @@ from app.blueprints.dashboard import bp
 from app.domain.enums import FinancialStatus
 from app.domain.models import ApiTokenId, LocationId, StoreId
 from app.domain.specs import OrderSpec
+from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService
 from app.services.inventory_reporting import (
     DEFAULT_LIMIT as INV_DEFAULT_LIMIT,
@@ -75,6 +76,13 @@ def _store_query_service() -> StoreQueryService:
     svc = current_app.extensions.get("store_query_service")
     if svc is None:
         raise RuntimeError("store_query_service is not wired on this app")
+    return svc  # type: ignore[no-any-return]
+
+
+def _analytics_service() -> AnalyticsService:
+    svc = current_app.extensions.get("analytics_service")
+    if svc is None:
+        raise RuntimeError("analytics_service is not wired on this app")
     return svc  # type: ignore[no-any-return]
 
 
@@ -357,6 +365,61 @@ def low_stock() -> str:
         sku_raw=sku_raw,
         store_id_raw=store_id_raw,
         page=page,
+        errors=errors,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Analytics — per (store, day) KPI table (TR-31)
+# ---------------------------------------------------------------------------
+
+
+def _parse_optional_date(raw: str | None) -> tuple[date | None, str | None]:
+    if not raw:
+        return None, None
+    try:
+        return date.fromisoformat(raw), None
+    except ValueError:
+        return None, f"Invalid date (YYYY-MM-DD): {raw!r}"
+
+
+@bp.get("/analytics")
+def analytics() -> str:
+    # Default window: trailing 7 days, ending yesterday (today is incomplete).
+    today = datetime.now(tz=UTC).date()
+    default_until = today - timedelta(days=1)
+    default_since = default_until - timedelta(days=6)
+
+    since_raw = request.args.get("since") or default_since.isoformat()
+    until_raw = request.args.get("until") or default_until.isoformat()
+    store_id_raw = request.args.getlist("store_id")
+
+    errors: list[str] = []
+    since, err = _parse_optional_date(since_raw)
+    if err:
+        errors.append(err)
+    until, err = _parse_optional_date(until_raw)
+    if err:
+        errors.append(err)
+    store_ids, err = _parse_store_ids(store_id_raw)
+    if err:
+        errors.append(err)
+
+    rows: tuple = ()
+    if not errors and since is not None and until is not None:
+        try:
+            rows = _analytics_service().list_kpis(store_ids=store_ids, since=since, until=until)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    stores = _store_query_service().list_active()
+    return render_template(
+        "dashboard/analytics.html",
+        since_raw=since_raw,
+        until_raw=until_raw,
+        store_id_raw=store_id_raw,
+        rows=rows,
+        stores=stores,
         errors=errors,
     )
 

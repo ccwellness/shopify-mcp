@@ -35,6 +35,9 @@
         <li><a href="{{ url_for('dashboard.low_stock') }}"
                {% if request.endpoint == 'dashboard.low_stock' %}aria-current="page"{% endif %}>
             Low Stock</a></li>
+        <li><a href="{{ url_for('dashboard.analytics') }}"
+               {% if request.endpoint == 'dashboard.analytics' %}aria-current="page"{% endif %}>
+            Analytics</a></li>
         <li><a href="{{ url_for('dashboard.tokens_list') }}"
                {% if request.endpoint and request.endpoint.startswith('dashboard.tokens') %}aria-current="page"{% endif %}>
             Tokens</a></li>

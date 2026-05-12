@@ -1,0 +1,80 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Analytics — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Daily KPIs</h1>
+  <p class="muted">Sessions, orders, units, revenue, conversion, AOV per (store, day). Computed by <code>flask analytics compute</code>; this view is read-only.</p>
+
+  <form method="get" action="{{ url_for('dashboard.analytics') }}" class="filters">
+    <label>
+      Since (YYYY-MM-DD)
+      <input type="text" name="since" value="{{ since_raw }}" required>
+    </label>
+    <label>
+      Until (YYYY-MM-DD)
+      <input type="text" name="until" value="{{ until_raw }}" required>
+    </label>
+    <label>
+      Store
+      <select name="store_id">
+        <option value="">(all stores)</option>
+        {% for s in stores %}
+          <option value="{{ s.id }}"
+            {% if store_id_raw and store_id_raw[0] == s.id|string %}selected{% endif %}>
+            {{ s.store_key }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Run</button>
+  </form>
+
+  {% if rows %}
+    {# Build a store_id → store_key map for human-readable labels. #}
+    {% set store_label = {} %}
+    {% for s in stores %}{% set _ = store_label.update({s.id: s.store_key}) %}{% endfor %}
+
+    <table class="compact">
+      <thead>
+        <tr>
+          <th>Store</th>
+          <th>Date</th>
+          <th class="num">Sessions</th>
+          <th class="num">Orders</th>
+          <th class="num">Units</th>
+          <th class="num">Revenue</th>
+          <th class="num">Conv %</th>
+          <th class="num">AOV</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td><strong>{{ store_label.get(r.store_id, r.store_id) }}</strong></td>
+            <td>{{ r.date.isoformat() }}</td>
+            <td class="num">{{ r.sessions if r.sessions is not none else '—' }}</td>
+            <td class="num">{{ r.orders if r.orders is not none else '—' }}</td>
+            <td class="num">{{ r.units if r.units is not none else '—' }}</td>
+            <td class="num">{{ r.revenue if r.revenue is not none else '—' }}</td>
+            <td class="num">
+              {% if r.conversion_rate is not none %}
+                {{ '%.2f'|format(r.conversion_rate * 100) }}%
+              {% else %}—{% endif %}
+            </td>
+            <td class="num">{{ r.aov if r.aov is not none else '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">
+      {{ rows|length }} row(s) for window
+      <code>{{ since_raw }} → {{ until_raw }}</code>.
+    </p>
+  {% else %}
+    <p class="muted">
+      No rows for this window.
+      Run <code>flask analytics compute --store-id &lt;n&gt; --since {{ since_raw }} --until {{ until_raw }}</code> to populate.
+    </p>
+  {% endif %}
+{% endblock %}

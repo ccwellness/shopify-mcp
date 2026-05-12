@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.domain.models import (
+    AnalyticsKpiDay,
     Fulfillment,
     InventoryLevel,
     Order,
@@ -119,6 +120,21 @@ def store_comparison_to_json(comparison: StoreComparison) -> dict[str, Any]:
         "until": _dt(comparison.until),
         "currency_warning": comparison.currency_warning,
         "rows": [_comparison_row(r) for r in comparison.rows],
+    }
+
+
+def kpi_day_to_json(row: AnalyticsKpiDay) -> dict[str, Any]:
+    return {
+        "store_id": int(row.store_id),
+        "date": row.date.isoformat(),
+        "sessions": row.sessions,
+        "orders": row.orders,
+        "units": row.units,
+        "revenue": _money(row.revenue),
+        # conversion_rate is Numeric(7,4) — surface as string for parity w/ Money.
+        "conversion_rate": str(row.conversion_rate) if row.conversion_rate is not None else None,
+        "aov": _money(row.aov),
+        "computed_at": _dt(row.computed_at),
     }
 
 
