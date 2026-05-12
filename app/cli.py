@@ -83,6 +83,9 @@ def sync_init(store_key: str | None, orders_since_days: int) -> None:
         # Refunds depend on orders being present locally — must run after.
         refunds = svc.sync_refunds(key, since=since)
         click.echo(f"  refunds:   {refunds.upserted} upserted")
+        # Sessions are independent of the order/catalog data; pull last N days.
+        sessions = svc.sync_sessions(key, days_back=min(orders_since_days, 30))
+        click.echo(f"  sessions:  {sessions.upserted} sessions_daily rows upserted")
 
 
 @sync_cli.command("orders")
@@ -155,6 +158,25 @@ def sync_refunds_cmd(store_key: str, since_days: int | None) -> None:
     result = svc.sync_refunds(store_key, since=since)
     suffix = f" (since {since.date()})" if since is not None else ""
     click.echo(f"{result.store_key}: {result.upserted} refunds upserted{suffix}")
+
+
+@sync_cli.command("sessions")
+@click.option("--store", "store_key", required=True)
+@click.option(
+    "--days",
+    "days_back",
+    default=30,
+    type=int,
+    show_default=True,
+    help="Pull sessions for the trailing N days (UNTIL -1d, exclusive of today).",
+)
+def sync_sessions_cmd(store_key: str, days_back: int) -> None:
+    """Pull per-day sessions / orders / total_sales via ShopifyQL (TR-29)."""
+    svc = _service()
+    result = svc.sync_sessions(store_key, days_back=days_back)
+    click.echo(
+        f"{result.store_key}: {result.upserted} sessions_daily rows upserted (last {days_back}d)"
+    )
 
 
 def _auth_service() -> AuthService:

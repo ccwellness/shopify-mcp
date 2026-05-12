@@ -36,6 +36,8 @@ from app.shopify.normalizers.inventory_paginated import normalize_inventory_item
 from app.shopify.normalizers.orders_bulk import normalize_order_bulk
 from app.shopify.normalizers.products_bulk import normalize_product_bulk
 from app.shopify.normalizers.refunds import normalize_refund_payload
+from app.shopify.normalizers.shopifyql_sessions import normalize_shopifyql_sessions
+from app.shopify.shopifyql import run_shopifyql
 
 _ORDER_BULK_QUERY_TEMPLATE = """
 {{
@@ -546,6 +548,45 @@ class SyncService:
 
         self._mark_sync_complete(store_id, SyncResource.INVENTORY)
         return SyncResult(store_key=store_key, resource=SyncResource.INVENTORY, upserted=count)
+
+    # -----------------------------------------------------------------------
+    # Sessions (ShopifyQL — Tier-1 analytics, TR-29)
+    # -----------------------------------------------------------------------
+
+    def sync_sessions(
+        self,
+        store_key: str,
+        *,
+        days_back: int = 30,
+    ) -> SyncResult:
+        """Pull per-day sessions/orders/total_sales for the last `days_back`
+        days into `sessions_daily`.
+
+        ShopifyQL's `UNTIL -1d` is exclusive of today (today's row is
+        still incomplete from Shopify's side until the day closes). We
+        leave `units_sold` None — that's derived from orders in the KPI
+        rollup pass.
+        """
+        if days_back <= 0:
+            raise ValueError("days_back must be > 0")
+
+        cfg = self._configs[store_key]
+        store_id = self._resolve_store_id(cfg)
+
+        query_str = (
+            "FROM sales, sessions SHOW day, total_sales, orders, sessions "
+            f"GROUP BY day SINCE -{days_back}d UNTIL -1d"
+        )
+        result = run_shopifyql(self._client, store_key, query_str)
+        rows = normalize_shopifyql_sessions(store_id, result)
+
+        with self._uow_factory() as uow:
+            for row in rows:
+                uow.analytics.upsert_sessions_day(row)
+            uow.commit()
+
+        self._mark_sync_complete(store_id, SyncResource.SESSIONS)
+        return SyncResult(store_key=store_key, resource=SyncResource.SESSIONS, upserted=len(rows))
 
     # -----------------------------------------------------------------------
     # Helpers
