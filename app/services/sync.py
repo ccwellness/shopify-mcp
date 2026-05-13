@@ -23,10 +23,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.domain.enums import FinancialStatus, SyncResource
-from app.domain.models import Location, LocationId, OrderId, StoreId, SyncStateRow
+from app.domain.models import CustomerId, Location, LocationId, OrderId, StoreId, SyncStateRow
 from app.domain.repositories import UnitOfWork
 from app.domain.specs import OrderSpec
 from app.services._store_resolver import ensure_store
+from app.services.subscriptions import build_provider as build_subscription_provider
 from app.shopify.bulk import BulkOperationsClient
 from app.shopify.client import ShopifyClient
 from app.shopify.config import StoreConfig
@@ -587,6 +588,51 @@ class SyncService:
 
         self._mark_sync_complete(store_id, SyncResource.SESSIONS)
         return SyncResult(store_key=store_key, resource=SyncResource.SESSIONS, upserted=len(rows))
+
+    # -----------------------------------------------------------------------
+    # Subscriptions (provider-dispatched: OrderGroove / Native / ...)  TR-27/28
+    # -----------------------------------------------------------------------
+
+    def sync_subscriptions(self, store_key: str) -> SyncResult:
+        """Pull every active subscription via the store's configured provider.
+
+        Stores whose `subscription_provider == UNKNOWN` or whose API key
+        isn't set in `.env` are silent skips (upserted=0). Stores using
+        `NATIVE` raise — no adapter exists for them yet.
+        """
+        cfg = self._configs[store_key]
+        store_id = self._resolve_store_id(cfg)
+
+        # Pre-load customer legacy_id → CustomerId so the provider's per-
+        # record customer resolution stays O(1) instead of one query per
+        # subscription. (~2k records on lubelife — N+1 would hurt.)
+        with self._uow_factory() as uow:
+            legacy_to_id = uow.customers.legacy_id_map(store_id)
+
+        def customer_lookup(shopify_customer_id: str) -> CustomerId | None:
+            try:
+                return legacy_to_id.get(int(shopify_customer_id))
+            except (TypeError, ValueError):
+                return None
+
+        provider = build_subscription_provider(cfg, store_id, customer_lookup)
+        if provider is None:
+            self._mark_sync_complete(store_id, SyncResource.SUBSCRIPTIONS)
+            return SyncResult(store_key=store_key, resource=SyncResource.SUBSCRIPTIONS, upserted=0)
+
+        upserted = 0
+        # Batch upserts inside a single UoW for throughput; OG returns ~2k
+        # records — fine to keep in one transaction for now.
+        with self._uow_factory() as uow:
+            for contract in provider.iter_active():
+                uow.subscriptions.upsert(contract)
+                upserted += 1
+            uow.commit()
+
+        self._mark_sync_complete(store_id, SyncResource.SUBSCRIPTIONS)
+        return SyncResult(
+            store_key=store_key, resource=SyncResource.SUBSCRIPTIONS, upserted=upserted
+        )
 
     # -----------------------------------------------------------------------
     # Helpers

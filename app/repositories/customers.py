@@ -56,6 +56,14 @@ class SqlAlchemyCustomerRepository:
         )
         return _row_to_domain(row) if row else None
 
+    def legacy_id_map(self, store_id: StoreId) -> dict[int, CustomerId]:
+        rows = self._session.execute(
+            select(CustomerRow.legacy_id, CustomerRow.id).where(
+                CustomerRow.store_id == int(store_id)
+            )
+        ).all()
+        return {legacy: CustomerId(cid) for legacy, cid in rows}
+
     def upsert(self, customer: Customer) -> None:
         existing = self._session.scalar(
             select(CustomerRow).where(

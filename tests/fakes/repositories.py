@@ -200,6 +200,9 @@ class InMemoryCustomerRepository:
                 return c
         return None
 
+    def legacy_id_map(self, store_id: StoreId) -> dict[int, CustomerId]:
+        return {c.legacy_id: c.id for c in self._db.customers.values() if c.store_id == store_id}
+
     def upsert(self, customer: Customer) -> None:
         self._db.customers[customer.id] = customer
 

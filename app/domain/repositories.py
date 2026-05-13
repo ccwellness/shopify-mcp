@@ -98,6 +98,12 @@ class CustomerRepository(Protocol):
 
     def get_by_email(self, store_id: StoreId, email: str) -> Customer | None: ...
 
+    def legacy_id_map(self, store_id: StoreId) -> dict[int, CustomerId]:
+        """Return `{customer.legacy_id: customer.id}` for the store. Used by
+        the subscriptions sync to resolve OrderGroove's Shopify-customer
+        numeric refs in batch without N+1 round trips."""
+        ...
+
     def upsert(self, customer: Customer) -> None: ...
 
 

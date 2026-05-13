@@ -89,6 +89,9 @@ def sync_init(store_key: str | None, orders_since_days: int) -> None:
         sessions_days = min(orders_since_days, 30)
         sessions = svc.sync_sessions(key, days_back=sessions_days)
         click.echo(f"  sessions:  {sessions.upserted} sessions_daily rows upserted")
+        # Subscriptions depend on customers being present (FK resolution).
+        subs = svc.sync_subscriptions(key)
+        click.echo(f"  subs:      {subs.upserted} subscription_contracts upserted")
         # Now that sessions + orders are present, roll up the KPI window.
         store_id = _store_id_for_key(key)
         if store_id is not None:
@@ -174,6 +177,19 @@ def sync_refunds_cmd(store_key: str, since_days: int | None) -> None:
     result = svc.sync_refunds(store_key, since=since)
     suffix = f" (since {since.date()})" if since is not None else ""
     click.echo(f"{result.store_key}: {result.upserted} refunds upserted{suffix}")
+
+
+@sync_cli.command("subscriptions")
+@click.option("--store", "store_key", required=True)
+def sync_subscriptions_cmd(store_key: str) -> None:
+    """Pull every active subscription via the store's configured provider (TR-27/28).
+
+    Stores without an OrderGroove API key (or whose subscription_provider
+    is UNKNOWN) are silent no-ops.
+    """
+    svc = _service()
+    result = svc.sync_subscriptions(store_key)
+    click.echo(f"{result.store_key}: {result.upserted} subscription_contracts upserted")
 
 
 @sync_cli.command("sessions")

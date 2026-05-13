@@ -30,6 +30,12 @@ class StoreConfig:
     plus: bool
     subscription_provider: SubscriptionProvider
     read_only: bool
+    # OrderGroove integration credentials — populated only for stores whose
+    # `subscription_provider == ORDERGROOVE`. Stays None on stores where the
+    # key hasn't been added to .env yet (the provider dispatcher in
+    # SyncService treats that as 'subscriptions sync disabled for now').
+    ordergroove_api_key: str | None = None
+    ordergroove_public_id: str | None = None
 
     @property
     def graphql_url(self) -> str:
@@ -90,6 +96,9 @@ def load_store_configs(
         # legacy Shopify behavior; verified empirically on first signed delivery.
         webhook_secret = env.get(f"SHOPIFY_{upper}_WEBHOOK_SECRET") or client_secret
 
+        og_key = env.get(f"ORDERGROOVE_{upper}_API_KEY") or None
+        og_public_id = env.get(f"ORDERGROOVE_{upper}_PUBLIC_ID") or None
+
         out[key] = StoreConfig(
             store_key=key,
             shop_domain=shop_domain,
@@ -99,5 +108,7 @@ def load_store_configs(
             plus=_bool(env.get(f"SHOPIFY_{upper}_PLUS"), default=False),
             subscription_provider=_provider(env.get(f"SHOPIFY_{upper}_SUBSCRIPTION_PROVIDER")),
             read_only=_bool(env.get(f"SHOPIFY_{upper}_READ_ONLY"), default=True),
+            ordergroove_api_key=og_key if og_key else None,
+            ordergroove_public_id=og_public_id if og_public_id else None,
         )
     return out
