@@ -338,6 +338,102 @@ def test_analytics_shows_error_on_bad_date(dashboard_client: FlaskClient) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Subscriptions
+# ---------------------------------------------------------------------------
+
+
+def _seed_subscriptions(uow: UnitOfWork) -> None:
+    from app.domain.enums import SubscriptionStatus  # noqa: PLC0415 — local to test seed
+    from app.domain.models import (  # noqa: PLC0415
+        SubscriptionContract,
+        SubscriptionContractId,
+    )
+
+    with uow as u:
+        u.subscriptions.upsert(
+            SubscriptionContract(
+                id=SubscriptionContractId(1),
+                store_id=LUBELIFE,
+                customer_id=None,
+                provider=SubscriptionProvider.ORDERGROOVE,
+                provider_contract_id="og-aaaa1111",
+                gid="gid://shopify/SubscriptionContract/111",
+                legacy_id=111,
+                status=SubscriptionStatus.ACTIVE,
+                next_billing_date=None,
+                frequency_interval="month",
+                frequency_count=3,
+                currency_code="USD",
+                created_at=T0,
+                updated_at=T0,
+            )
+        )
+        u.subscriptions.upsert(
+            SubscriptionContract(
+                id=SubscriptionContractId(2),
+                store_id=SHOPJO,
+                customer_id=None,
+                provider=SubscriptionProvider.ORDERGROOVE,
+                provider_contract_id="og-bbbb2222",
+                gid="gid://shopify/SubscriptionContract/222",
+                legacy_id=222,
+                status=SubscriptionStatus.CANCELLED,
+                next_billing_date=None,
+                frequency_interval="month",
+                frequency_count=1,
+                currency_code="USD",
+                created_at=T0,
+                updated_at=T0,
+            )
+        )
+
+
+def test_subscriptions_renders_with_data(
+    dashboard_client: FlaskClient, fake_uow: UnitOfWork
+) -> None:
+    _seed_subscriptions(fake_uow)
+    resp = dashboard_client.get("/subscriptions")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "Subscriptions" in body
+    assert "og-aaaa1" in body  # truncated provider_contract_id
+    assert "active" in body
+    assert "cancelled" in body
+
+
+def test_subscriptions_filter_by_status(
+    dashboard_client: FlaskClient, fake_uow: UnitOfWork
+) -> None:
+    _seed_subscriptions(fake_uow)
+    body = dashboard_client.get("/subscriptions?status=cancelled").get_data(as_text=True)
+    assert "og-bbbb2" in body
+    assert "og-aaaa1" not in body
+
+
+def test_subscriptions_renders_with_no_data(dashboard_client: FlaskClient) -> None:
+    resp = dashboard_client.get("/subscriptions")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "No subscriptions match the filter." in body
+
+
+def test_subscriptions_rejects_bad_status(dashboard_client: FlaskClient) -> None:
+    body = dashboard_client.get("/subscriptions?status=banana").get_data(as_text=True)
+    assert "status invalid" in body
+
+
+def test_subscriptions_rows_partial_returns_fragment(
+    dashboard_client: FlaskClient, fake_uow: UnitOfWork
+) -> None:
+    _seed_subscriptions(fake_uow)
+    resp = dashboard_client.get("/subscriptions/rows")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "<html" not in body.lower()
+    assert "og-aaaa1" in body
+
+
+# ---------------------------------------------------------------------------
 # Cross-cutting — session gate + audit-log isolation
 # ---------------------------------------------------------------------------
 
@@ -352,6 +448,7 @@ def test_dashboard_routes_redirect_to_login_when_not_signed_in(
         "/orders",
         "/inventory/low-stock",
         "/analytics",
+        "/subscriptions",
         "/admin/tokens",
     ):
         resp = unauthed_client.get(path)

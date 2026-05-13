@@ -37,6 +37,7 @@ def create_app(*, container: Container | None = None) -> Flask:
     app.extensions["store_comparison_service"] = container.store_comparison_service()
     app.extensions["store_query_service"] = container.store_query_service()
     app.extensions["analytics_service"] = container.analytics_service()
+    app.extensions["subscription_query_service"] = container.subscription_query_service()
 
     # Shopify-facing services are only wired if at least one store has real
     # creds — keeps tests / dev-without-`.env` paths working.

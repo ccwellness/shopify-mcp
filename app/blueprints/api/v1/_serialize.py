@@ -21,6 +21,7 @@ from app.domain.models import (
     OrderShippingAddress,
     StoreComparison,
     StoreComparisonRow,
+    SubscriptionContract,
 )
 
 
@@ -135,6 +136,25 @@ def kpi_day_to_json(row: AnalyticsKpiDay) -> dict[str, Any]:
         "conversion_rate": str(row.conversion_rate) if row.conversion_rate is not None else None,
         "aov": _money(row.aov),
         "computed_at": _dt(row.computed_at),
+    }
+
+
+def subscription_contract_to_json(c: SubscriptionContract) -> dict[str, Any]:
+    return {
+        "id": int(c.id),
+        "store_id": int(c.store_id),
+        "customer_id": int(c.customer_id) if c.customer_id is not None else None,
+        "provider": c.provider.value,
+        "provider_contract_id": c.provider_contract_id,
+        "gid": c.gid,
+        "legacy_id": c.legacy_id,
+        "status": c.status.value,
+        "next_billing_date": _dt(c.next_billing_date),
+        "frequency_interval": c.frequency_interval,
+        "frequency_count": c.frequency_count,
+        "currency_code": c.currency_code,
+        "created_at": _dt(c.created_at),
+        "updated_at": _dt(c.updated_at),
     }
 
 

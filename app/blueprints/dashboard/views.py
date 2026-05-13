@@ -26,9 +26,9 @@ from flask import (
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from app.blueprints.dashboard import bp
-from app.domain.enums import FinancialStatus
-from app.domain.models import ApiTokenId, LocationId, StoreId
-from app.domain.specs import OrderSpec
+from app.domain.enums import FinancialStatus, SubscriptionProvider, SubscriptionStatus
+from app.domain.models import ApiTokenId, CustomerId, LocationId, StoreId
+from app.domain.specs import OrderSpec, SubscriptionSpec
 from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService
 from app.services.inventory_reporting import (
@@ -42,6 +42,10 @@ from app.services.order_query import DEFAULT_LIMIT as ORDER_DEFAULT_LIMIT
 from app.services.order_query import OrderQueryService
 from app.services.store_compare import StoreComparisonService
 from app.services.store_query import StoreQueryService
+from app.services.subscription_query import (
+    DEFAULT_LIMIT as SUB_DEFAULT_LIMIT,
+)
+from app.services.subscription_query import SubscriptionQueryService
 
 
 def _store_comparison_service() -> StoreComparisonService:
@@ -83,6 +87,13 @@ def _analytics_service() -> AnalyticsService:
     svc = current_app.extensions.get("analytics_service")
     if svc is None:
         raise RuntimeError("analytics_service is not wired on this app")
+    return svc  # type: ignore[no-any-return]
+
+
+def _subscription_query_service() -> SubscriptionQueryService:
+    svc = current_app.extensions.get("subscription_query_service")
+    if svc is None:
+        raise RuntimeError("subscription_query_service is not wired on this app")
     return svc  # type: ignore[no-any-return]
 
 
@@ -420,6 +431,77 @@ def analytics() -> str:
         store_id_raw=store_id_raw,
         rows=rows,
         stores=stores,
+        errors=errors,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subscriptions — per-contract list across stores + providers
+# ---------------------------------------------------------------------------
+
+
+@bp.get("/subscriptions")
+def subscriptions() -> str:
+    return _render_subscriptions(partial=False)
+
+
+@bp.get("/subscriptions/rows")
+def subscriptions_rows() -> str:
+    """HTMX endpoint — returns just the next page of rows as an HTML fragment."""
+    return _render_subscriptions(partial=True)
+
+
+def _render_subscriptions(*, partial: bool) -> str:
+    store_id_raw = request.args.getlist("store_id")
+    status_raw = request.args.get("status") or ""
+    provider_raw = request.args.get("provider") or ""
+    customer_id_raw = request.args.get("customer_id") or ""
+    cursor = request.args.get("cursor") or None
+
+    errors: list[str] = []
+    store_ids, err = _parse_store_ids(store_id_raw)
+    if err:
+        errors.append(err)
+    customer_id, err = _parse_optional_int(customer_id_raw, "customer_id")
+    if err:
+        errors.append(err)
+
+    status: SubscriptionStatus | None = None
+    if status_raw:
+        try:
+            status = SubscriptionStatus(status_raw)
+        except ValueError:
+            errors.append(f"status invalid: {status_raw!r}")
+
+    provider: SubscriptionProvider | None = None
+    if provider_raw:
+        try:
+            provider = SubscriptionProvider(provider_raw)
+        except ValueError:
+            errors.append(f"provider invalid: {provider_raw!r}")
+
+    page = None
+    if not errors:
+        spec = SubscriptionSpec(
+            store_ids=store_ids,
+            customer_id=CustomerId(customer_id) if customer_id is not None else None,
+            status=status,
+            provider=provider,
+        )
+        page = _subscription_query_service().list_subscriptions(
+            spec, limit=SUB_DEFAULT_LIMIT, cursor=cursor
+        )
+
+    template = "dashboard/_subscriptions_rows.html" if partial else "dashboard/subscriptions.html"
+    return render_template(
+        template,
+        store_id_raw=store_id_raw,
+        status_raw=status_raw,
+        provider_raw=provider_raw,
+        customer_id_raw=customer_id_raw,
+        statuses=[s.value for s in SubscriptionStatus],
+        providers=[p.value for p in SubscriptionProvider],
+        page=page,
         errors=errors,
     )
 

@@ -34,6 +34,7 @@ from app.services.inventory_reporting import InventoryReportingService
 from app.services.order_query import OrderQueryService
 from app.services.store_compare import StoreComparisonService
 from app.services.store_query import StoreQueryService
+from app.services.subscription_query import SubscriptionQueryService
 from app.services.sync import SyncService
 from app.services.webhook_ingest import WebhookIngestService
 from app.shopify.bulk import BulkOperationsClient
@@ -109,6 +110,11 @@ class Container(containers.DeclarativeContainer):
 
     analytics_service = providers.Factory(
         AnalyticsService,
+        uow_factory=uow_factory,
+    )
+
+    subscription_query_service = providers.Factory(
+        SubscriptionQueryService,
         uow_factory=uow_factory,
     )
 

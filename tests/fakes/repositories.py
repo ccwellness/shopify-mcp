@@ -487,7 +487,8 @@ class InMemorySubscriptionRepository:
     ) -> Page[SubscriptionContract]:
         ordered = sorted(
             (c for c in self._db.subscriptions.values() if _matches_subscription(c, spec)),
-            key=lambda c: c.id,
+            key=lambda c: (c.updated_at, c.id),
+            reverse=True,
         )
         offset = _decode_cursor(cursor)
         page = tuple(ordered[offset : offset + limit])

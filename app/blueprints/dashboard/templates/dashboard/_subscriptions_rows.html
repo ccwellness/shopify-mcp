@@ -1,0 +1,26 @@
+{% if page %}
+  {% for c in page.items %}
+    <tr>
+      <td>{{ c.store_id }}</td>
+      <td><span class="pill">{{ c.provider.value }}</span></td>
+      <td><code title="{{ c.provider_contract_id }}">{{ c.provider_contract_id[:8] }}</code></td>
+      <td>{% if c.legacy_id is not none %}{{ c.legacy_id }}{% else %}—{% endif %}</td>
+      <td>
+        {% if c.customer_id is not none %}
+          {{ c.customer_id }}
+        {% else %}
+          <span class="muted">(unmatched)</span>
+        {% endif %}
+      </td>
+      <td><span class="pill">{{ c.status.value }}</span></td>
+      <td>
+        {% if c.frequency_count and c.frequency_interval %}
+          every {{ c.frequency_count }} {{ c.frequency_interval }}{% if c.frequency_count != 1 %}s{% endif %}
+        {% else %}—{% endif %}
+      </td>
+      <td>{{ c.next_billing_date.date().isoformat() if c.next_billing_date else '—' }}</td>
+      <td>{{ c.currency_code or '—' }}</td>
+      <td>{{ c.updated_at.isoformat() }}</td>
+    </tr>
+  {% endfor %}
+{% endif %}
