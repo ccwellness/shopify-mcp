@@ -38,6 +38,9 @@
         <li><a href="{{ url_for('dashboard.products') }}"
                {% if request.endpoint and request.endpoint.startswith('dashboard.product') %}aria-current="page"{% endif %}>
             Products</a></li>
+        <li><a href="{{ url_for('dashboard.admin_syncs') }}"
+               {% if request.endpoint and request.endpoint.startswith('dashboard.admin_syncs') %}aria-current="page"{% endif %}>
+            Syncs</a></li>
         <li><a href="{{ url_for('dashboard.tokens_list') }}"
                {% if request.endpoint and request.endpoint.startswith('dashboard.tokens') %}aria-current="page"{% endif %}>
             Tokens</a></li>

@@ -1,0 +1,72 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Syncs — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Sync ops</h1>
+  <p class="muted">
+    Trigger a full re-sync for any resource on any store. Each button spawns a background
+    job; refresh this page after a minute to see the updated last-sync timestamp.
+  </p>
+
+  {% if sync_info %}
+    <div class="warning" style="background: var(--info-fill); color: var(--info-fg); border-left-color: var(--info-fg);">
+      {% for m in sync_info %}<p>{{ m }}</p>{% endfor %}
+    </div>
+  {% endif %}
+  {% if sync_errors %}
+    <div class="warning">
+      {% for m in sync_errors %}<p>{{ m }}</p>{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if not stores %}
+    <p class="muted">No active stores configured.</p>
+  {% else %}
+    {% for store in stores %}
+      <section>
+        <h3>{{ store.store_key }}</h3>
+        <table class="compact">
+          <thead>
+            <tr>
+              <th>Resource</th>
+              <th>Last sync</th>
+              <th>Last error</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in resources %}
+              {% set state = states.get((store.store_key, r)) %}
+              <tr>
+                <td><strong>{{ r.value }}</strong></td>
+                <td>
+                  {% if state and state.last_completed_at %}
+                    {{ state.last_completed_at | datetime_pt }}
+                  {% else %}
+                    <span class="muted">never</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if state and state.last_error %}
+                    <span style="color: var(--danger-fg);" title="{{ state.last_error }}">
+                      {{ state.last_error_at | datetime_pt }} — {{ state.last_error[:80] }}{% if state.last_error|length > 80 %}…{% endif %}
+                    </span>
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td>
+                  <form method="post" action="{{ url_for('dashboard.admin_syncs_run', resource_name=r.value) }}" style="margin: 0;">
+                    <input type="hidden" name="store_key" value="{{ store.store_key }}">
+                    <button type="submit" class="secondary" style="height: 28px; padding: 0 12px; font-size: var(--fs-12);">Run sync</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% endfor %}
+  {% endif %}
+{% endblock %}

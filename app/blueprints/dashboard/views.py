@@ -322,31 +322,48 @@ def orders_rows() -> str:
 
 _log = logging.getLogger(__name__)
 
+# Maps SyncResource → SyncService method name. Every method takes a
+# single positional `store_key` and returns a SyncResult; resource-specific
+# kwargs (since, page_size, etc.) keep their defaults for the dashboard
+# button — full re-syncs are simpler to reason about than incremental.
+_SYNC_METHODS: dict[SyncResource, str] = {
+    SyncResource.ORDERS: "sync_orders",
+    SyncResource.REFUNDS: "sync_refunds",
+    SyncResource.CUSTOMERS: "sync_customers",
+    SyncResource.PRODUCTS: "sync_products",
+    SyncResource.LOCATIONS: "sync_locations",
+    SyncResource.INVENTORY: "sync_inventory",
+    SyncResource.SESSIONS: "sync_sessions",
+    SyncResource.SUBSCRIPTIONS: "sync_subscriptions",
+}
 
-def _run_orders_sync_background(app: Any, store_key: str) -> None:
-    """Run `sync_orders` inside a fresh app context. Errors are written to
-    `sync_state.last_error` so the dashboard can surface them on next reload.
+
+def _run_sync_background(app: Any, store_key: str, resource: SyncResource) -> None:
+    """Run a SyncService method inside a fresh app context. Errors are
+    written to `sync_state.last_error` so the dashboard can surface them
+    on next reload.
 
     Runs in a daemon thread — Shopify bulk operations can take minutes,
     longer than any reasonable HTTP timeout.
     """
     with app.app_context():
+        method_name = _SYNC_METHODS[resource]
         try:
             svc = app.extensions["sync_service"]
-            svc.sync_orders(store_key)
+            getattr(svc, method_name)(store_key)
         except Exception as exc:  # noqa: BLE001 — last-chance error capture for background thread
-            _log.exception("orders sync failed for store=%s", store_key)
+            _log.exception("%s sync failed for store=%s", resource.value, store_key)
             uow_factory = app.extensions["container"].uow_factory()
             now = datetime.now(tz=UTC)
             try:
                 with uow_factory() as uow:
                     store = uow.stores.get_by_key(store_key)
                     if store is not None:
-                        existing = uow.sync_state.get(store.id, SyncResource.ORDERS)
+                        existing = uow.sync_state.get(store.id, resource)
                         uow.sync_state.upsert(
                             SyncStateRow(
                                 store_id=store.id,
-                                resource=SyncResource.ORDERS,
+                                resource=resource,
                                 last_completed_at=(
                                     existing.last_completed_at if existing else None
                                 ),
@@ -358,39 +375,54 @@ def _run_orders_sync_background(app: Any, store_key: str) -> None:
                         )
                         uow.commit()
             except Exception:  # noqa: BLE001 — error-write itself failed; log + give up
-                _log.exception("failed to record orders sync error for store=%s", store_key)
+                _log.exception(
+                    "failed to record %s sync error for store=%s", resource.value, store_key
+                )
+
+
+def _kick_off_sync(*, resource: SyncResource, redirect_endpoint: str) -> WerkzeugResponse:
+    """Validate the form, spawn the background thread, flash status, redirect.
+
+    Shared by every sync-button POST handler. `redirect_endpoint` is the
+    endpoint name to redirect to after the kickoff (e.g. 'dashboard.orders'
+    for the in-page widget, 'dashboard.admin_syncs' for the central page).
+    """
+    store_key = (request.form.get("store_key") or "").strip()
+    redirect_url = url_for(redirect_endpoint)
+
+    if not store_key:
+        flash("store_key is required", category="sync_error")
+        return redirect(redirect_url, code=HTTPStatus.SEE_OTHER)
+
+    configs = current_app.extensions.get("store_configs") or {}
+    if store_key not in configs:
+        flash(f"unknown store_key: {store_key!r}", category="sync_error")
+        return redirect(redirect_url, code=HTTPStatus.SEE_OTHER)
+
+    if "sync_service" not in current_app.extensions:
+        flash("sync service is not wired (no store credentials configured)", category="sync_error")
+        return redirect(redirect_url, code=HTTPStatus.SEE_OTHER)
+
+    app = current_app._get_current_object()  # type: ignore[attr-defined]  # noqa: SLF001
+    threading.Thread(
+        target=_run_sync_background,
+        args=(app, store_key, resource),
+        daemon=True,
+        name=f"{resource.value}-sync-{store_key}",
+    ).start()
+
+    flash(
+        f"{resource.value.title()} sync started for {store_key}. "
+        "Refresh in a minute to see updated state.",
+        category="sync_info",
+    )
+    return redirect(redirect_url, code=HTTPStatus.SEE_OTHER)
 
 
 @bp.post("/orders/sync")
 def orders_sync() -> WerkzeugResponse:
     """Kick off a background bulk orders sync for the chosen store."""
-    store_key = (request.form.get("store_key") or "").strip()
-    if not store_key:
-        flash("store_key is required", category="sync_error")
-        return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
-
-    configs = current_app.extensions.get("store_configs") or {}
-    if store_key not in configs:
-        flash(f"unknown store_key: {store_key!r}", category="sync_error")
-        return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
-
-    if "sync_service" not in current_app.extensions:
-        flash("sync service is not wired (no store credentials configured)", category="sync_error")
-        return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
-
-    app = current_app._get_current_object()  # type: ignore[attr-defined]  # noqa: SLF001
-    threading.Thread(
-        target=_run_orders_sync_background,
-        args=(app, store_key),
-        daemon=True,
-        name=f"orders-sync-{store_key}",
-    ).start()
-
-    flash(
-        f"Sync started for {store_key}. Refresh in a minute to see updated state.",
-        category="sync_info",
-    )
-    return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
+    return _kick_off_sync(resource=SyncResource.ORDERS, redirect_endpoint="dashboard.orders")
 
 
 @bp.get("/orders/<int:order_id>")
@@ -806,6 +838,59 @@ def product_detail(product_id: int) -> tuple[str, int] | str:
 # ---------------------------------------------------------------------------
 # Admin — API token management (TR-4)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Admin — sync ops console (TR-12 surface)
+# ---------------------------------------------------------------------------
+
+# Resources we expose run-now buttons for. Ordered to match the natural sync
+# pipeline (catalog → orders → derived analytics) so an operator running a
+# full refresh from top to bottom gets the dependencies in the right order.
+_SYNC_DISPLAY_ORDER: tuple[SyncResource, ...] = (
+    SyncResource.LOCATIONS,
+    SyncResource.PRODUCTS,
+    SyncResource.INVENTORY,
+    SyncResource.CUSTOMERS,
+    SyncResource.ORDERS,
+    SyncResource.REFUNDS,
+    SyncResource.SESSIONS,
+    SyncResource.SUBSCRIPTIONS,
+)
+
+
+@bp.get("/admin/syncs")
+def admin_syncs() -> str:
+    """Ops console — last-sync timestamps + run-now buttons for every store × resource."""
+    stores = _store_query_service().list_active()
+    uow_factory = current_app.extensions["container"].uow_factory()
+    states: dict[tuple[str, SyncResource], SyncStateRow | None] = {}
+    with uow_factory() as uow:
+        for s in stores:
+            for r in _SYNC_DISPLAY_ORDER:
+                states[(s.store_key, r)] = uow.sync_state.get(s.id, r)
+    return render_template(
+        "dashboard/admin_syncs.html",
+        stores=stores,
+        resources=_SYNC_DISPLAY_ORDER,
+        states=states,
+        sync_info=get_flashed_messages(category_filter=["sync_info"]),
+        sync_errors=get_flashed_messages(category_filter=["sync_error"]),
+    )
+
+
+@bp.post("/admin/syncs/<resource_name>")
+def admin_syncs_run(resource_name: str) -> WerkzeugResponse:
+    """Kick off any resource's sync from the admin console."""
+    try:
+        resource = SyncResource(resource_name)
+    except ValueError:
+        flash(f"unknown sync resource: {resource_name!r}", category="sync_error")
+        return redirect(url_for("dashboard.admin_syncs"), code=HTTPStatus.SEE_OTHER)
+    if resource not in _SYNC_METHODS:
+        flash(f"{resource_name!r} is not exposed for ad-hoc sync", category="sync_error")
+        return redirect(url_for("dashboard.admin_syncs"), code=HTTPStatus.SEE_OTHER)
+    return _kick_off_sync(resource=resource, redirect_endpoint="dashboard.admin_syncs")
 
 
 @bp.get("/admin/tokens")

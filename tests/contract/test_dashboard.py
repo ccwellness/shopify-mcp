@@ -301,6 +301,74 @@ def test_orders_sync_flashes_error_when_service_not_wired(
     assert resp.status_code == HTTPStatus.SEE_OTHER
 
 
+# ---------------------------------------------------------------------------
+# Admin — sync ops console
+# ---------------------------------------------------------------------------
+
+
+def test_admin_syncs_renders(dashboard_client: FlaskClient) -> None:
+    """Empty-stores case: page still renders the empty-state message."""
+    resp = dashboard_client.get("/admin/syncs")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "Sync ops" in body
+    # Empty active-stores case for the test container.
+    assert "No active stores configured." in body
+
+
+def test_admin_syncs_with_stores_lists_every_resource(
+    dashboard_client: FlaskClient, fake_uow: UnitOfWork
+) -> None:
+    from app.domain.models import Store  # noqa: PLC0415
+
+    with fake_uow as uow:
+        uow.stores.upsert(
+            Store(
+                id=LUBELIFE,
+                store_key="lubelife",
+                shop_domain="lubelife.myshopify.com",
+                display_name="Lubelife",
+                plus=False,
+                subscription_provider=SubscriptionProvider.UNKNOWN,
+                read_only=True,
+                active=True,
+                timezone=None,
+                currency_code="USD",
+                created_at=T0,
+                updated_at=T0,
+            )
+        )
+    body = dashboard_client.get("/admin/syncs").get_data(as_text=True)
+    # All 8 sync resources listed under the store header.
+    for r in (
+        "orders",
+        "products",
+        "inventory",
+        "customers",
+        "locations",
+        "refunds",
+        "sessions",
+        "subscriptions",
+    ):
+        assert f"<strong>{r}</strong>" in body
+    # Each row has a Run sync button.
+    assert body.count("Run sync") >= 8  # noqa: PLR2004 — count matches resource list
+
+
+def test_admin_syncs_run_returns_303_for_known_resource(dashboard_client: FlaskClient) -> None:
+    # No store_configs in test app → flash error + 303 back.
+    resp = dashboard_client.post("/admin/syncs/products", data={"store_key": "lubelife"})
+    assert resp.status_code == HTTPStatus.SEE_OTHER
+    assert "/admin/syncs" in resp.headers["Location"]
+
+
+def test_admin_syncs_run_rejects_unknown_resource(dashboard_client: FlaskClient) -> None:
+    resp = dashboard_client.post("/admin/syncs/bogus", data={"store_key": "lubelife"})
+    assert resp.status_code == HTTPStatus.SEE_OTHER
+    follow = dashboard_client.get(resp.headers["Location"])
+    assert "unknown sync resource" in follow.get_data(as_text=True)
+
+
 def test_orders_rows_partial_returns_fragment(
     dashboard_client: FlaskClient, seed: UnitOfWork
 ) -> None:
@@ -630,6 +698,7 @@ def test_dashboard_routes_redirect_to_login_when_not_signed_in(
         "/subscriptions",
         "/products",
         "/admin/tokens",
+        "/admin/syncs",
     ):
         resp = unauthed_client.get(path)
         assert resp.status_code == HTTPStatus.FOUND, f"{path} returned {resp.status_code}"
