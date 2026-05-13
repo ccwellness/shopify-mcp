@@ -355,9 +355,9 @@ def test_analytics_renders_with_data(dashboard_client: FlaskClient, seed: UnitOf
     body = dashboard_client.get("/analytics?since=2026-05-10&until=2026-05-10").get_data(
         as_text=True
     )
-    assert "500.00" in body
-    # Conversion rendered as percentage with 2 decimals.
-    assert "2.50%" in body
+    assert "$500.00" in body  # Ensemble currency: $x,xxx.xx with leading $
+    # Conversion rendered per Ensemble percent rule — 1 decimal when |v| > 0.1.
+    assert "2.5%" in body
 
 
 def test_analytics_shows_error_on_bad_date(dashboard_client: FlaskClient) -> None:

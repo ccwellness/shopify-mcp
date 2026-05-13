@@ -65,8 +65,8 @@
               <td>{{ v.title }}</td>
               <td>{% if v.sku %}<code>{{ v.sku }}</code>{% else %}—{% endif %}</td>
               <td>{{ v.barcode or '—' }}</td>
-              <td class="num">{{ v.price }}</td>
-              <td class="num">{{ v.compare_at_price or '—' }}</td>
+              <td class="num">{{ v.price | currency }}</td>
+              <td class="num">{{ v.compare_at_price | currency }}</td>
               <td>{{ v.currency_code or '—' }}</td>
               <td>{{ v.inventory_item_id or '—' }}</td>
               <td>{{ v.id }}</td>
@@ -99,10 +99,10 @@
             <tr>
               <td>{{ lv.inventory_item_id }}</td>
               <td>{{ location_names.get(lv.location_id, lv.location_id) }}</td>
-              <td class="num">{{ lv.available if lv.available is not none else '—' }}</td>
-              <td class="num">{{ lv.on_hand if lv.on_hand is not none else '—' }}</td>
-              <td class="num">{{ lv.committed if lv.committed is not none else '—' }}</td>
-              <td class="num">{{ lv.incoming if lv.incoming is not none else '—' }}</td>
+              <td class="num">{{ lv.available | count }}</td>
+              <td class="num">{{ lv.on_hand | count }}</td>
+              <td class="num">{{ lv.committed | count }}</td>
+              <td class="num">{{ lv.incoming | count }}</td>
               <td>{{ lv.updated_at.isoformat() }}</td>
             </tr>
           {% endfor %}
@@ -136,18 +136,18 @@
           {% for d in sales_days %}
             <tr>
               <td>{{ d.date.isoformat() }}</td>
-              <td class="num">{{ d.units }}</td>
-              <td class="num">{{ d.gross_revenue }}</td>
-              <td class="num">{{ d.order_count }}</td>
+              <td class="num">{{ d.units | count }}</td>
+              <td class="num">{{ d.gross_revenue | currency }}</td>
+              <td class="num">{{ d.order_count | count }}</td>
             </tr>
           {% endfor %}
         </tbody>
         <tfoot>
           <tr>
             <th><strong>Total</strong></th>
-            <th class="num"><strong>{{ totals.units }}</strong></th>
-            <th class="num"><strong>{{ totals.gross_revenue }}</strong></th>
-            <th class="num"><strong>{{ totals.orders }}</strong></th>
+            <th class="num"><strong>{{ totals.units | count }}</strong></th>
+            <th class="num"><strong>{{ totals.gross_revenue | currency }}</strong></th>
+            <th class="num"><strong>{{ totals.orders | count }}</strong></th>
           </tr>
         </tfoot>
       </table>
@@ -176,8 +176,8 @@
               <td><strong><a href="{{ url_for('dashboard.order_detail', order_id=r.order.id) }}">{{ r.order.name }}</a></strong></td>
               <td>{{ r.order.processed_at.isoformat() if r.order.processed_at else '—' }}</td>
               <td>{% if r.order.financial_status %}<span class="pill" data-status="{{ r.order.financial_status.value }}">{{ r.order.financial_status.value }}</span>{% endif %}</td>
-              <td class="num">{{ r.order.total_price }} {{ r.order.currency_code }}</td>
-              <td class="num">{{ r.units_of_product }}</td>
+              <td class="num">{{ r.order.total_price | currency }} {{ r.order.currency_code or '' }}</td>
+              <td class="num">{{ r.units_of_product | count }}</td>
               <td>{{ r.skus_of_product|join(', ') if r.skus_of_product else '—' }}</td>
             </tr>
           {% endfor %}

@@ -46,9 +46,9 @@
               <td>{{ lvl.store_id }}</td>
               <td>{{ lvl.location_id }}</td>
               <td>{{ lvl.inventory_item_id }}</td>
-              <td class="num"><strong>{{ lvl.available if lvl.available is not none else '—' }}</strong></td>
-              <td class="num">{{ lvl.on_hand if lvl.on_hand is not none else '—' }}</td>
-              <td class="num">{{ lvl.committed if lvl.committed is not none else '—' }}</td>
+              <td class="num"><strong>{{ lvl.available | count }}</strong></td>
+              <td class="num">{{ lvl.on_hand | count }}</td>
+              <td class="num">{{ lvl.committed | count }}</td>
               <td>{{ lvl.updated_at.isoformat() if lvl.updated_at else '—' }}</td>
             </tr>
           {% endfor %}

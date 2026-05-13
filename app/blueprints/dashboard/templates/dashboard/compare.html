@@ -48,11 +48,11 @@
           {% for row in comparison.rows %}
             <tr>
               <td><strong>{{ row.store_key }}</strong></td>
-              <td class="num">{{ row.order_count }}</td>
-              <td class="num">{{ row.paid_revenue }}</td>
-              <td class="num">{{ row.refunds_total }}</td>
-              <td class="num"><strong>{{ row.net_revenue }}</strong></td>
-              <td class="num">{{ row.units_sold }}</td>
+              <td class="num">{{ row.order_count | count }}</td>
+              <td class="num">{{ row.paid_revenue | currency }}</td>
+              <td class="num">{{ row.refunds_total | currency }}</td>
+              <td class="num"><strong>{{ row.net_revenue | currency }}</strong></td>
+              <td class="num">{{ row.units_sold | count }}</td>
               <td>{{ row.currency_code or '—' }}</td>
               <td>
                 {% for status, count in row.status_counts.items() %}

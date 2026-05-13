@@ -30,11 +30,11 @@
             {% else %}—{% endif %}
           </td>
         </tr>
-        <tr><th>Subtotal</th><td class="num">{{ order.subtotal_price or '—' }} {{ order.currency_code or '' }}</td></tr>
-        <tr><th>Total tax</th><td class="num">{{ order.total_tax or '—' }} {{ order.currency_code or '' }}</td></tr>
-        <tr><th>Total discounts</th><td class="num">{{ order.total_discounts or '—' }} {{ order.currency_code or '' }}</td></tr>
-        <tr><th>Total shipping</th><td class="num">{{ order.total_shipping or '—' }} {{ order.currency_code or '' }}</td></tr>
-        <tr><th><strong>Total</strong></th><td class="num"><strong>{{ order.total_price }} {{ order.currency_code }}</strong></td></tr>
+        <tr><th>Subtotal</th><td class="num">{{ order.subtotal_price | currency }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th>Total tax</th><td class="num">{{ order.total_tax | currency }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th>Total discounts</th><td class="num">{{ order.total_discounts | currency }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th>Total shipping</th><td class="num">{{ order.total_shipping | currency }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th><strong>Total</strong></th><td class="num"><strong>{{ order.total_price | currency }} {{ order.currency_code or '' }}</strong></td></tr>
       </tbody>
     </table>
   </section>
@@ -60,9 +60,9 @@
               <td>{{ li.title }}</td>
               <td>{% if li.sku %}<code>{{ li.sku }}</code>{% else %}—{% endif %}</td>
               <td>{{ li.vendor or '—' }}</td>
-              <td class="num">{{ li.quantity }}</td>
-              <td class="num">{{ li.price }}</td>
-              <td class="num">{{ li.total_discount }}</td>
+              <td class="num">{{ li.quantity | count }}</td>
+              <td class="num">{{ li.price | currency }}</td>
+              <td class="num">{{ li.total_discount | currency }}</td>
               <td>{% if li.fulfillment_status %}<span class="pill" data-status="{{ li.fulfillment_status.value }}">{{ li.fulfillment_status.value }}</span>{% else %}—{% endif %}</td>
             </tr>
           {% endfor %}
@@ -143,7 +143,7 @@
           {% for r in refunds %}
             <tr>
               <td>{{ r.created_at.isoformat() }}</td>
-              <td class="num">{{ r.amount }}</td>
+              <td class="num">{{ r.amount | currency }}</td>
               <td>{{ r.currency_code }}</td>
               <td>{{ r.note or '—' }}</td>
             </tr>

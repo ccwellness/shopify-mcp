@@ -21,4 +21,6 @@ bp = Blueprint(
     static_url_path="/dashboard-static",
 )
 
-from app.blueprints.dashboard import views  # noqa: E402, F401 — registers routes
+from app.blueprints.dashboard import filters, views  # noqa: E402, F401 — registers routes + filters
+
+filters.register(bp)

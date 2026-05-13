@@ -8,7 +8,7 @@
         {% if o.financial_status %}<span class="pill" data-status="{{ o.financial_status.value }}">{{ o.financial_status.value }}</span>{% endif %}
         {% if o.fulfillment_status %}<span class="pill" data-status="{{ o.fulfillment_status.value }}">{{ o.fulfillment_status.value }}</span>{% endif %}
       </td>
-      <td class="num">{{ o.total_price }}</td>
+      <td class="num">{{ o.total_price | currency }}</td>
       <td>{{ o.currency_code }}</td>
     </tr>
   {% endfor %}

@@ -53,16 +53,12 @@
           <tr>
             <td><strong>{{ store_label.get(r.store_id, r.store_id) }}</strong></td>
             <td>{{ r.date.isoformat() }}</td>
-            <td class="num">{{ r.sessions if r.sessions is not none else '—' }}</td>
-            <td class="num">{{ r.orders if r.orders is not none else '—' }}</td>
-            <td class="num">{{ r.units if r.units is not none else '—' }}</td>
-            <td class="num">{{ r.revenue if r.revenue is not none else '—' }}</td>
-            <td class="num">
-              {% if r.conversion_rate is not none %}
-                {{ '%.2f'|format(r.conversion_rate * 100) }}%
-              {% else %}—{% endif %}
-            </td>
-            <td class="num">{{ r.aov if r.aov is not none else '—' }}</td>
+            <td class="num">{{ r.sessions | count }}</td>
+            <td class="num">{{ r.orders | count }}</td>
+            <td class="num">{{ r.units | count }}</td>
+            <td class="num">{{ r.revenue | currency }}</td>
+            <td class="num">{{ (r.conversion_rate * 100) | percent if r.conversion_rate is not none else '—' }}</td>
+            <td class="num">{{ r.aov | currency }}</td>
           </tr>
         {% endfor %}
       </tbody>

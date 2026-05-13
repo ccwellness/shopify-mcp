@@ -7,7 +7,7 @@
       <td>{{ p.vendor or '—' }}</td>
       <td>{{ p.product_type or '—' }}</td>
       <td><span class="pill" data-status="{{ p.status.value }}">{{ p.status.value }}</span></td>
-      <td class="num">{{ p.variants|length }}</td>
+      <td class="num">{{ p.variants|length | count }}</td>
       <td>{{ p.tags|join(', ') if p.tags else '—' }}</td>
       <td>{{ p.updated_at.isoformat() }}</td>
     </tr>
