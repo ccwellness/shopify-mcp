@@ -8,12 +8,12 @@
 
   <form method="get" action="{{ url_for('dashboard.compare') }}" class="filters">
     <label>
-      Since (ISO 8601)
-      <input type="text" name="since" value="{{ since_raw }}" required>
+      From
+      <input type="date" name="since" value="{{ since_raw }}" required>
     </label>
     <label>
-      Until (ISO 8601)
-      <input type="text" name="until" value="{{ until_raw }}" required>
+      Through
+      <input type="date" name="until" value="{{ until_raw }}" required>
     </label>
     <label>
       Store id (optional, repeatable)

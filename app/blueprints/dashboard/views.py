@@ -13,6 +13,7 @@ from decimal import Decimal
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from flask import (
     current_app,
@@ -64,6 +65,8 @@ from app.services.subscription_query import (
     DEFAULT_LIMIT as SUB_DEFAULT_LIMIT,
 )
 from app.services.subscription_query import SubscriptionQueryService
+
+_PT = ZoneInfo("America/Los_Angeles")
 
 
 def _store_comparison_service() -> StoreComparisonService:
@@ -251,20 +254,20 @@ def home() -> str:
 
 @bp.get("/compare")
 def compare() -> str:
-    # Default window: trailing 7 days, since-inclusive / until-exclusive.
-    now = datetime.now(tz=UTC).replace(microsecond=0)
-    default_until = now
-    default_since = now - timedelta(days=7)
+    # Default window: trailing 7 days through today (inclusive).
+    today = datetime.now(tz=UTC).date()
+    default_since = today - timedelta(days=6)
+    default_until = today
 
-    since_raw = request.args.get("since") or default_since.strftime("%Y-%m-%dT%H:%M:%SZ")
-    until_raw = request.args.get("until") or default_until.strftime("%Y-%m-%dT%H:%M:%SZ")
+    since_raw = request.args.get("since") or default_since.isoformat()
+    until_raw = request.args.get("until") or default_until.isoformat()
     store_id_raw = request.args.getlist("store_id")
 
     errors: list[str] = []
-    since, err = _parse_optional_dt(since_raw)
+    since_date, err = _parse_optional_date(since_raw)
     if err:
         errors.append(err)
-    until, err = _parse_optional_dt(until_raw)
+    until_date, err = _parse_optional_date(until_raw)
     if err:
         errors.append(err)
     store_ids, err = _parse_store_ids(store_id_raw)
@@ -272,10 +275,17 @@ def compare() -> str:
         errors.append(err)
 
     comparison: Any = None
-    if not errors and since is not None and until is not None:
+    if not errors and since_date is not None and until_date is not None:
+        # User picks PT calendar dates; treat the window as PT-midnight to
+        # PT-midnight half-open (until-date inclusive). Convert to UTC for
+        # the service / SQL layer.
+        since_dt = datetime.combine(since_date, datetime.min.time(), tzinfo=_PT).astimezone(UTC)
+        until_dt = datetime.combine(
+            until_date + timedelta(days=1), datetime.min.time(), tzinfo=_PT
+        ).astimezone(UTC)
         try:
             comparison = _store_comparison_service().compare_orders(
-                since=since, until=until, store_ids=store_ids
+                since=since_dt, until=until_dt, store_ids=store_ids
             )
         except ValueError as exc:
             errors.append(str(exc))

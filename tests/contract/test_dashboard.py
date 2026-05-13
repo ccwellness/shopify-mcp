@@ -43,8 +43,8 @@ SHOPJO = StoreId(2)
 LOC_A = LocationId(10)
 
 T0 = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
-SINCE = "2026-05-01T00:00:00Z"
-UNTIL = "2026-05-08T00:00:00Z"
+SINCE = "2026-05-01"  # date picker format: YYYY-MM-DD
+UNTIL = "2026-05-08"
 
 
 def _store(*, sid: StoreId, key: str) -> Store:
@@ -212,7 +212,7 @@ def test_compare_shows_error_on_bad_date(dashboard_client: FlaskClient) -> None:
     resp = dashboard_client.get("/compare?since=notadate&until=" + UNTIL)
     assert resp.status_code == HTTPStatus.OK
     body = resp.get_data(as_text=True)
-    assert "Invalid ISO 8601 datetime" in body
+    assert "Invalid date" in body
 
 
 def test_compare_shows_error_on_inverted_window(dashboard_client: FlaskClient) -> None:
