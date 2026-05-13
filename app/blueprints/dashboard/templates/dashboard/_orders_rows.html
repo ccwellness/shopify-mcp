@@ -2,7 +2,7 @@
   {% for o in page.items %}
     <tr>
       <td>{{ o.store_id }}</td>
-      <td><strong>{{ o.name }}</strong></td>
+      <td><strong><a href="{{ url_for('dashboard.order_detail', order_id=o.id) }}">{{ o.name }}</a></strong></td>
       <td>{{ o.processed_at.isoformat() if o.processed_at else '—' }}</td>
       <td>
         {% if o.financial_status %}<span class="pill">{{ o.financial_status.value }}</span>{% endif %}

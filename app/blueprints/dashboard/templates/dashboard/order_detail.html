@@ -1,0 +1,157 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Order {{ order.name }} — Shopify Connector{% endblock %}
+
+{% block content %}
+  <p><a href="{{ url_for('dashboard.orders') }}">← All orders</a></p>
+
+  <hgroup>
+    <h1>{{ order.name }}</h1>
+    <p>
+      Store {{ order.store_id }} ·
+      {% if order.financial_status %}<span class="pill">{{ order.financial_status.value }}</span>{% endif %}
+      {% if order.fulfillment_status %}<span class="pill">{{ order.fulfillment_status.value }}</span>{% endif %}
+      {% if order.processed_at %} · processed {{ order.processed_at.isoformat() }}{% endif %}
+    </p>
+  </hgroup>
+
+  <section>
+    <h3>Summary</h3>
+    <table class="compact">
+      <tbody>
+        <tr><th>Order GID</th><td><code>{{ order.gid or '—' }}</code></td></tr>
+        <tr><th>Legacy id</th><td>{{ order.legacy_id or '—' }}</td></tr>
+        <tr><th>Email</th><td>{{ order.email or '—' }}</td></tr>
+        <tr>
+          <th>Customer</th>
+          <td>
+            {% if order.customer_id is not none %}
+              <a href="{{ url_for('dashboard.orders', customer_id=order.customer_id) }}">#{{ order.customer_id }}</a>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        <tr><th>Subtotal</th><td class="num">{{ order.subtotal_price or '—' }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th>Total tax</th><td class="num">{{ order.total_tax or '—' }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th>Total discounts</th><td class="num">{{ order.total_discounts or '—' }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th>Total shipping</th><td class="num">{{ order.total_shipping or '—' }} {{ order.currency_code or '' }}</td></tr>
+        <tr><th><strong>Total</strong></th><td class="num"><strong>{{ order.total_price }} {{ order.currency_code }}</strong></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>Line items ({{ order.line_items|length }})</h3>
+    {% if order.line_items %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>SKU</th>
+            <th>Vendor</th>
+            <th class="num">Qty</th>
+            <th class="num">Price</th>
+            <th class="num">Discount</th>
+            <th>Fulfillment</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for li in order.line_items %}
+            <tr>
+              <td>{{ li.title }}</td>
+              <td>{% if li.sku %}<code>{{ li.sku }}</code>{% else %}—{% endif %}</td>
+              <td>{{ li.vendor or '—' }}</td>
+              <td class="num">{{ li.quantity }}</td>
+              <td class="num">{{ li.price }}</td>
+              <td class="num">{{ li.total_discount }}</td>
+              <td>{% if li.fulfillment_status %}<span class="pill">{{ li.fulfillment_status.value }}</span>{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No line items recorded.</p>
+    {% endif %}
+  </section>
+
+  {% if order.shipping_address %}
+    <section>
+      <h3>Shipping address</h3>
+      {% set a = order.shipping_address %}
+      <address>
+        {% if a.name %}{{ a.name }}<br>{% endif %}
+        {% if a.company %}{{ a.company }}<br>{% endif %}
+        {% if a.address1 %}{{ a.address1 }}<br>{% endif %}
+        {% if a.address2 %}{{ a.address2 }}<br>{% endif %}
+        {% if a.city or a.province or a.zip %}
+          {{ a.city or '' }}{% if a.province %}, {{ a.province }}{% endif %} {{ a.zip or '' }}<br>
+        {% endif %}
+        {% if a.country %}{{ a.country }}<br>{% endif %}
+        {% if a.phone %}{{ a.phone }}{% endif %}
+      </address>
+    </section>
+  {% endif %}
+
+  <section>
+    <h3>Fulfillments ({{ order.fulfillments|length }})</h3>
+    {% if order.fulfillments %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Shipment</th>
+            <th>Carrier</th>
+            <th>Tracking</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in order.fulfillments %}
+            <tr>
+              <td><span class="pill">{{ f.status.value }}</span></td>
+              <td>{% if f.shipment_status %}<span class="pill">{{ f.shipment_status.value }}</span>{% else %}—{% endif %}</td>
+              <td>{{ f.tracking_company or '—' }}</td>
+              <td>
+                {% if f.tracking_url and f.tracking_number %}
+                  <a href="{{ f.tracking_url }}" rel="noopener" target="_blank"><code>{{ f.tracking_number }}</code></a>
+                {% elif f.tracking_number %}
+                  <code>{{ f.tracking_number }}</code>
+                {% else %}—{% endif %}
+              </td>
+              <td>{{ f.created_at.isoformat() if f.created_at else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No fulfillments recorded.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h3>Refunds ({{ refunds|length }})</h3>
+    {% if refunds %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th class="num">Amount</th>
+            <th>Currency</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in refunds %}
+            <tr>
+              <td>{{ r.created_at.isoformat() }}</td>
+              <td class="num">{{ r.amount }}</td>
+              <td>{{ r.currency_code }}</td>
+              <td>{{ r.note or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No refunds against this order.</p>
+    {% endif %}
+  </section>
+{% endblock %}

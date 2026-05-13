@@ -27,7 +27,7 @@ from werkzeug.wrappers import Response as WerkzeugResponse
 
 from app.blueprints.dashboard import bp
 from app.domain.enums import FinancialStatus, SubscriptionProvider, SubscriptionStatus
-from app.domain.models import ApiTokenId, CustomerId, LocationId, StoreId
+from app.domain.models import ApiTokenId, CustomerId, LocationId, OrderId, StoreId
 from app.domain.specs import OrderSpec, SubscriptionSpec
 from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService
@@ -279,6 +279,18 @@ def orders() -> str:
 def orders_rows() -> str:
     """HTMX endpoint — returns just the next page of rows as an HTML fragment."""
     return _render_orders(partial=True)
+
+
+@bp.get("/orders/<int:order_id>")
+def order_detail(order_id: int) -> tuple[str, int] | str:
+    svc = _order_query_service()
+    order = svc.get_order_by_id(OrderId(order_id))
+    if order is None:
+        return render_template(
+            "dashboard/not_found.html", what=f"Order {order_id}"
+        ), HTTPStatus.NOT_FOUND
+    refunds = svc.list_refunds_for_order(OrderId(order_id))
+    return render_template("dashboard/order_detail.html", order=order, refunds=refunds)
 
 
 def _render_orders(*, partial: bool) -> str:

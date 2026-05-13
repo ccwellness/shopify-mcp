@@ -16,7 +16,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from app.domain.enums import FinancialStatus
-from app.domain.models import Order, OrderId, Page, StoreId
+from app.domain.models import Order, OrderId, Page, Refund, StoreId
 from app.domain.repositories import UnitOfWork
 from app.domain.specs import OrderSpec
 
@@ -51,6 +51,10 @@ class OrderQueryService:
     def get_order_by_gid(self, store_id: StoreId, gid: str) -> Order | None:
         with self._uow_factory() as uow:
             return uow.orders.get_by_gid(store_id, gid)
+
+    def list_refunds_for_order(self, order_id: OrderId) -> tuple[Refund, ...]:
+        with self._uow_factory() as uow:
+            return uow.refunds.list_for_order(order_id)
 
     def count_orders_by_status(
         self,

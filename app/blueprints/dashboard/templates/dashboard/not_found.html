@@ -1,0 +1,9 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Not found — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Not found</h1>
+  <p class="muted">{{ what }} was not found.</p>
+  <p><a href="{{ url_for('dashboard.home') }}">← Back to dashboard</a></p>
+{% endblock %}

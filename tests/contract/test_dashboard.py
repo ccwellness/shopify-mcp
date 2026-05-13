@@ -249,6 +249,34 @@ def test_orders_renders_with_no_data(dashboard_client: FlaskClient) -> None:
     assert "Orders" in body  # heading still renders
 
 
+def test_orders_list_links_each_row_to_detail(
+    dashboard_client: FlaskClient, seed: UnitOfWork
+) -> None:
+    body = dashboard_client.get("/orders").get_data(as_text=True)
+    assert 'href="/orders/1"' in body
+    assert 'href="/orders/2"' in body
+
+
+def test_order_detail_renders(dashboard_client: FlaskClient, seed: UnitOfWork) -> None:
+    resp = dashboard_client.get("/orders/1")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "#TEST-1" in body
+    assert "Line items" in body
+    assert "SKU-1" in body  # line item SKU from _line_item
+    # Refund seeded against order 1 surfaces.
+    assert "25.00" in body
+    # Back link to /orders.
+    assert 'href="/orders"' in body
+
+
+def test_order_detail_404_for_missing(dashboard_client: FlaskClient) -> None:
+    resp = dashboard_client.get("/orders/9999")
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    body = resp.get_data(as_text=True)
+    assert "Order 9999" in body
+
+
 def test_orders_rows_partial_returns_fragment(
     dashboard_client: FlaskClient, seed: UnitOfWork
 ) -> None:
