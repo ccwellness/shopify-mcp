@@ -19,9 +19,13 @@ from app.domain.models import (
     Order,
     OrderLineItem,
     OrderShippingAddress,
+    Product,
+    ProductOrderSummary,
+    ProductSalesDay,
     StoreComparison,
     StoreComparisonRow,
     SubscriptionContract,
+    Variant,
 )
 
 
@@ -136,6 +140,59 @@ def kpi_day_to_json(row: AnalyticsKpiDay) -> dict[str, Any]:
         "conversion_rate": str(row.conversion_rate) if row.conversion_rate is not None else None,
         "aov": _money(row.aov),
         "computed_at": _dt(row.computed_at),
+    }
+
+
+def variant_to_json(v: Variant) -> dict[str, Any]:
+    return {
+        "id": int(v.id),
+        "store_id": int(v.store_id),
+        "product_id": int(v.product_id),
+        "gid": v.gid,
+        "legacy_id": v.legacy_id,
+        "title": v.title,
+        "sku": v.sku,
+        "barcode": v.barcode,
+        "position": v.position,
+        "price": _money(v.price),
+        "compare_at_price": _money(v.compare_at_price),
+        "currency_code": v.currency_code,
+        "inventory_item_id": int(v.inventory_item_id) if v.inventory_item_id is not None else None,
+    }
+
+
+def product_to_json(p: Product) -> dict[str, Any]:
+    return {
+        "id": int(p.id),
+        "store_id": int(p.store_id),
+        "gid": p.gid,
+        "legacy_id": p.legacy_id,
+        "title": p.title,
+        "handle": p.handle,
+        "status": p.status.value,
+        "vendor": p.vendor,
+        "product_type": p.product_type,
+        "tags": list(p.tags),
+        "created_at": _dt(p.created_at),
+        "updated_at": _dt(p.updated_at),
+        "variants": [variant_to_json(v) for v in p.variants],
+    }
+
+
+def product_sales_day_to_json(d: ProductSalesDay) -> dict[str, Any]:
+    return {
+        "date": d.date.isoformat(),
+        "units": d.units,
+        "gross_revenue": _money(d.gross_revenue),
+        "order_count": d.order_count,
+    }
+
+
+def product_order_summary_to_json(s: ProductOrderSummary) -> dict[str, Any]:
+    return {
+        "order": order_to_json(s.order),
+        "units_of_product": s.units_of_product,
+        "skus_of_product": list(s.skus_of_product),
     }
 
 

@@ -9,6 +9,7 @@ page with a flash-style error rather than returning JSON.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
@@ -26,16 +27,22 @@ from flask import (
 from werkzeug.wrappers import Response as WerkzeugResponse
 
 from app.blueprints.dashboard import bp
-from app.domain.enums import FinancialStatus, SubscriptionProvider, SubscriptionStatus
+from app.domain.enums import (
+    FinancialStatus,
+    ProductStatus,
+    SubscriptionProvider,
+    SubscriptionStatus,
+)
 from app.domain.models import (
     ApiTokenId,
     CustomerId,
     LocationId,
     OrderId,
+    ProductId,
     StoreId,
     SubscriptionContractId,
 )
-from app.domain.specs import OrderSpec, SubscriptionSpec
+from app.domain.specs import OrderSpec, ProductSpec, SubscriptionSpec
 from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService
 from app.services.inventory_reporting import (
@@ -47,6 +54,10 @@ from app.services.inventory_reporting import (
 )
 from app.services.order_query import DEFAULT_LIMIT as ORDER_DEFAULT_LIMIT
 from app.services.order_query import OrderQueryService
+from app.services.product_query import (
+    DEFAULT_LIMIT as PRODUCT_DEFAULT_LIMIT,
+)
+from app.services.product_query import ProductQueryService
 from app.services.store_compare import StoreComparisonService
 from app.services.store_query import StoreQueryService
 from app.services.subscription_query import (
@@ -101,6 +112,13 @@ def _subscription_query_service() -> SubscriptionQueryService:
     svc = current_app.extensions.get("subscription_query_service")
     if svc is None:
         raise RuntimeError("subscription_query_service is not wired on this app")
+    return svc  # type: ignore[no-any-return]
+
+
+def _product_query_service() -> ProductQueryService:
+    svc = current_app.extensions.get("product_query_service")
+    if svc is None:
+        raise RuntimeError("product_query_service is not wired on this app")
     return svc  # type: ignore[no-any-return]
 
 
@@ -531,6 +549,140 @@ def _render_subscriptions(*, partial: bool) -> str:
         statuses=[s.value for s in SubscriptionStatus],
         providers=[p.value for p in SubscriptionProvider],
         page=page,
+        errors=errors,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Products — list + per-product analytics drilldown
+# ---------------------------------------------------------------------------
+
+_PRODUCT_SALES_WINDOW_DAYS = 30
+
+
+@bp.get("/products")
+def products() -> str:
+    return _render_products(partial=False)
+
+
+@bp.get("/products/rows")
+def products_rows() -> str:
+    """HTMX endpoint — returns just the next page of rows as an HTML fragment."""
+    return _render_products(partial=True)
+
+
+def _render_products(*, partial: bool) -> str:
+    store_id_raw = request.args.getlist("store_id")
+    status_raw = request.args.get("status") or ""
+    vendor_raw = request.args.get("vendor") or ""
+    type_raw = request.args.get("product_type") or ""
+    title_raw = request.args.get("title_query") or ""
+    cursor = request.args.get("cursor") or None
+
+    errors: list[str] = []
+    store_ids, err = _parse_store_ids(store_id_raw)
+    if err:
+        errors.append(err)
+
+    status: ProductStatus | None = None
+    if status_raw:
+        try:
+            status = ProductStatus(status_raw)
+        except ValueError:
+            errors.append(f"status invalid: {status_raw!r}")
+
+    page = None
+    if not errors:
+        spec = ProductSpec(
+            store_ids=store_ids,
+            status=status,
+            title_query=title_raw or None,
+            vendor=vendor_raw or None,
+            product_type=type_raw or None,
+        )
+        page = _product_query_service().list_products(
+            spec, limit=PRODUCT_DEFAULT_LIMIT, cursor=cursor
+        )
+
+    template = "dashboard/_products_rows.html" if partial else "dashboard/products.html"
+    return render_template(
+        template,
+        store_id_raw=store_id_raw,
+        status_raw=status_raw,
+        vendor_raw=vendor_raw,
+        type_raw=type_raw,
+        title_raw=title_raw,
+        statuses=[s.value for s in ProductStatus],
+        page=page,
+        errors=errors,
+    )
+
+
+@bp.get("/products/<int:product_id>")
+def product_detail(product_id: int) -> tuple[str, int] | str:
+    svc = _product_query_service()
+    product = svc.get_product_by_id(ProductId(product_id))
+    if product is None:
+        return render_template(
+            "dashboard/not_found.html", what=f"Product {product_id}"
+        ), HTTPStatus.NOT_FOUND
+
+    # Trailing 30 days [since, until), in UTC. Configurable via ?since=&until=.
+    now = datetime.now(tz=UTC).replace(microsecond=0)
+    until_raw = request.args.get("until") or ""
+    since_raw = request.args.get("since") or ""
+    errors: list[str] = []
+    until, err = _parse_optional_dt(until_raw)
+    if err:
+        errors.append(err)
+    since, err = _parse_optional_dt(since_raw)
+    if err:
+        errors.append(err)
+    if until is None:
+        until = now
+    if since is None:
+        since = until - timedelta(days=_PRODUCT_SALES_WINDOW_DAYS)
+
+    variant_ids = tuple(v.id for v in product.variants)
+    levels = svc.get_inventory_for_variants(product.store_id, variant_ids) if variant_ids else ()
+    sales_series = svc.get_sales_by_day(product.store_id, ProductId(product_id), since, until)
+    recent = svc.get_recent_orders(product.store_id, ProductId(product_id))
+    locations = svc.get_locations(product.store_id)
+    location_names = {loc.id: loc.name for loc in locations}
+
+    # Zero-fill the daily series so the trend table is continuous.
+    sales_by_date = {d.date: d for d in sales_series}
+    days: list[dict[str, Any]] = []
+    cursor_day = since.date()
+    end_day = until.date()
+    while cursor_day < end_day:
+        hit = sales_by_date.get(cursor_day)
+        days.append(
+            {
+                "date": cursor_day,
+                "units": hit.units if hit else 0,
+                "gross_revenue": hit.gross_revenue if hit else Decimal("0"),
+                "order_count": hit.order_count if hit else 0,
+            }
+        )
+        cursor_day = cursor_day + timedelta(days=1)
+
+    totals = {
+        "units": sum(d["units"] for d in days),
+        "gross_revenue": sum((d["gross_revenue"] for d in days), Decimal("0")),
+        "orders": sum(d["order_count"] for d in days),
+    }
+
+    return render_template(
+        "dashboard/product_detail.html",
+        product=product,
+        levels=levels,
+        location_names=location_names,
+        sales_days=days,
+        totals=totals,
+        since=since,
+        until=until,
+        recent=recent,
         errors=errors,
     )
 

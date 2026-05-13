@@ -1,0 +1,190 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}{{ product.title }} — Shopify Connector{% endblock %}
+
+{% block content %}
+  <p><a href="{{ url_for('dashboard.products') }}">← All products</a></p>
+
+  <hgroup>
+    <h1>{{ product.title }}</h1>
+    <p>
+      Store {{ product.store_id }} ·
+      <span class="pill">{{ product.status.value }}</span>
+      {% if product.product_type %}<span class="pill">{{ product.product_type }}</span>{% endif %}
+      {% if product.vendor %} · vendor: {{ product.vendor }}{% endif %}
+      · handle: <code>{{ product.handle }}</code>
+    </p>
+  </hgroup>
+
+  {% if product.tags %}
+    <p>
+      {% for t in product.tags %}<span class="pill">{{ t }}</span>{% endfor %}
+    </p>
+  {% endif %}
+
+  <p class="muted">
+    <small>
+      Created {{ product.created_at.isoformat() }} ·
+      Updated {{ product.updated_at.isoformat() }}
+    </small>
+  </p>
+
+  <section>
+    <h3>Identifiers</h3>
+    <table class="compact">
+      <tbody>
+        <tr><th>Internal id</th><td>{{ product.id }}</td></tr>
+        <tr><th>Shopify GID</th><td><code>{{ product.gid }}</code></td></tr>
+        <tr><th>Shopify legacy id</th><td>{{ product.legacy_id }}</td></tr>
+        <tr><th>Handle</th><td><code>{{ product.handle }}</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>Variants ({{ product.variants|length }})</h3>
+    {% if product.variants %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>Title</th>
+            <th>SKU</th>
+            <th>Barcode</th>
+            <th class="num">Price</th>
+            <th class="num">Compare-at</th>
+            <th>Currency</th>
+            <th>Inventory item</th>
+            <th>Variant id</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in product.variants %}
+            <tr>
+              <td class="num">{{ v.position or '—' }}</td>
+              <td>{{ v.title }}</td>
+              <td>{% if v.sku %}<code>{{ v.sku }}</code>{% else %}—{% endif %}</td>
+              <td>{{ v.barcode or '—' }}</td>
+              <td class="num">{{ v.price }}</td>
+              <td class="num">{{ v.compare_at_price or '—' }}</td>
+              <td>{{ v.currency_code or '—' }}</td>
+              <td>{{ v.inventory_item_id or '—' }}</td>
+              <td>{{ v.id }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No variants on this product.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h3>Inventory levels ({{ levels|length }})</h3>
+    {% if levels %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Inventory item</th>
+            <th>Location</th>
+            <th class="num">Available</th>
+            <th class="num">On hand</th>
+            <th class="num">Committed</th>
+            <th class="num">Incoming</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for lv in levels %}
+            <tr>
+              <td>{{ lv.inventory_item_id }}</td>
+              <td>{{ location_names.get(lv.location_id, lv.location_id) }}</td>
+              <td class="num">{{ lv.available if lv.available is not none else '—' }}</td>
+              <td class="num">{{ lv.on_hand if lv.on_hand is not none else '—' }}</td>
+              <td class="num">{{ lv.committed if lv.committed is not none else '—' }}</td>
+              <td class="num">{{ lv.incoming if lv.incoming is not none else '—' }}</td>
+              <td>{{ lv.updated_at.isoformat() }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No inventory tracked for this product's variants.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h3>Sales over time</h3>
+    <p class="muted">
+      <small>
+        Window {{ since.date().isoformat() }} → {{ until.date().isoformat() }}.
+        Gross revenue — does not net refunds (refund rows aren't decomposed to line items in our schema).
+      </small>
+    </p>
+
+    {% if sales_days %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="num">Units</th>
+            <th class="num">Gross revenue</th>
+            <th class="num">Orders</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in sales_days %}
+            <tr>
+              <td>{{ d.date.isoformat() }}</td>
+              <td class="num">{{ d.units }}</td>
+              <td class="num">{{ d.gross_revenue }}</td>
+              <td class="num">{{ d.order_count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th><strong>Total</strong></th>
+            <th class="num"><strong>{{ totals.units }}</strong></th>
+            <th class="num"><strong>{{ totals.gross_revenue }}</strong></th>
+            <th class="num"><strong>{{ totals.orders }}</strong></th>
+          </tr>
+        </tfoot>
+      </table>
+    {% else %}
+      <p class="muted">No sales in the window.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h3>Recent orders containing this product ({{ recent|length }})</h3>
+    {% if recent %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Processed at</th>
+            <th>Status</th>
+            <th class="num">Total</th>
+            <th class="num">Units of this product</th>
+            <th>SKUs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in recent %}
+            <tr>
+              <td><strong><a href="{{ url_for('dashboard.order_detail', order_id=r.order.id) }}">{{ r.order.name }}</a></strong></td>
+              <td>{{ r.order.processed_at.isoformat() if r.order.processed_at else '—' }}</td>
+              <td>{% if r.order.financial_status %}<span class="pill">{{ r.order.financial_status.value }}</span>{% endif %}</td>
+              <td class="num">{{ r.order.total_price }} {{ r.order.currency_code }}</td>
+              <td class="num">{{ r.units_of_product }}</td>
+              <td>{{ r.skus_of_product|join(', ') if r.skus_of_product else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No orders in our DB include this product yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

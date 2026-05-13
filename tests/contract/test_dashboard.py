@@ -489,6 +489,106 @@ def test_subscription_detail_404_for_missing(dashboard_client: FlaskClient) -> N
 
 
 # ---------------------------------------------------------------------------
+# Products
+# ---------------------------------------------------------------------------
+
+
+def _seed_products(uow: UnitOfWork) -> None:
+    from app.domain.enums import ProductStatus  # noqa: PLC0415 — local to test seed
+    from app.domain.models import (  # noqa: PLC0415
+        Product,
+        ProductId,
+        Variant,
+        VariantId,
+    )
+
+    with uow as u:
+        variant = Variant(
+            id=VariantId(50),
+            store_id=LUBELIFE,
+            product_id=ProductId(7),
+            gid="gid://shopify/ProductVariant/50",
+            legacy_id=50,
+            title="Default",
+            sku="WIDG-1",
+            barcode=None,
+            position=1,
+            price=Decimal("9.99"),
+            compare_at_price=None,
+            currency_code="USD",
+            inventory_item_id=None,
+        )
+        u.products.upsert(
+            Product(
+                id=ProductId(7),
+                store_id=LUBELIFE,
+                gid="gid://shopify/Product/7",
+                legacy_id=7,
+                title="Test Widget",
+                handle="test-widget",
+                status=ProductStatus.ACTIVE,
+                vendor="Acme",
+                product_type="Widget",
+                tags=("featured",),
+                created_at=T0,
+                updated_at=T0,
+                variants=(variant,),
+            )
+        )
+
+
+def test_products_list_renders(dashboard_client: FlaskClient, fake_uow: UnitOfWork) -> None:
+    _seed_products(fake_uow)
+    resp = dashboard_client.get("/products")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "Products" in body
+    assert "Test Widget" in body
+    assert 'href="/products/7"' in body
+
+
+def test_products_list_filter_by_status(
+    dashboard_client: FlaskClient, fake_uow: UnitOfWork
+) -> None:
+    _seed_products(fake_uow)
+    body = dashboard_client.get("/products?status=archived").get_data(as_text=True)
+    assert "Test Widget" not in body
+    assert "No products match the filter." in body
+
+
+def test_products_list_rejects_bad_status(dashboard_client: FlaskClient) -> None:
+    body = dashboard_client.get("/products?status=banana").get_data(as_text=True)
+    assert "status invalid" in body
+
+
+def test_product_detail_renders_all_sections(
+    dashboard_client: FlaskClient, fake_uow: UnitOfWork
+) -> None:
+    _seed_products(fake_uow)
+    resp = dashboard_client.get("/products/7")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    # Section headers
+    assert "Identifiers" in body
+    assert "Variants" in body
+    assert "Inventory levels" in body
+    assert "Sales over time" in body
+    assert "Recent orders" in body
+    # Product fields
+    assert "Test Widget" in body
+    assert "WIDG-1" in body
+    # Empty states (no orders, no inventory seeded against the product)
+    assert "No orders in our DB include this product yet." in body
+    assert "No inventory tracked for this product's variants." in body
+
+
+def test_product_detail_404_for_missing(dashboard_client: FlaskClient) -> None:
+    resp = dashboard_client.get("/products/9999")
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert "Product 9999" in resp.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
 # Cross-cutting — session gate + audit-log isolation
 # ---------------------------------------------------------------------------
 
@@ -504,6 +604,7 @@ def test_dashboard_routes_redirect_to_login_when_not_signed_in(
         "/inventory/low-stock",
         "/analytics",
         "/subscriptions",
+        "/products",
         "/admin/tokens",
     ):
         resp = unauthed_client.get(path)

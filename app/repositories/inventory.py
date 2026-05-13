@@ -86,6 +86,23 @@ class SqlAlchemyInventoryRepository:
         )
         return Page(items=tuple(items), next_cursor=next_cursor)
 
+    def levels_for_variants(
+        self,
+        store_id: StoreId,
+        variant_ids: tuple[VariantId, ...],
+    ) -> tuple[InventoryLevel, ...]:
+        if not variant_ids:
+            return ()
+        rows = self._session.scalars(
+            select(InventoryLevelRow)
+            .join(InventoryItemRow, InventoryItemRow.id == InventoryLevelRow.inventory_item_id)
+            .where(
+                InventoryItemRow.store_id == int(store_id),
+                InventoryItemRow.variant_id.in_([int(v) for v in variant_ids]),
+            )
+        ).all()
+        return tuple(_level_row_to_domain(r) for r in rows)
+
     def get_item(self, store_id: StoreId, gid: str) -> InventoryItem | None:
         row = self._session.scalar(
             select(InventoryItemRow).where(

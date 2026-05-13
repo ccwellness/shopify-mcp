@@ -43,6 +43,7 @@ from app.domain.models import (
     Page,
     Product,
     ProductId,
+    ProductSalesDay,
     Refund,
     RefundId,
     SessionsDay,
@@ -139,6 +140,30 @@ class OrderRepository(Protocol):
         """Per-store rollup over a `[since, until]` window. See OrderAggregate."""
         ...
 
+    def sales_by_day_for_product(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        since: datetime,
+        until: datetime,
+    ) -> tuple[ProductSalesDay, ...]:
+        """Daily gross-revenue + units rollup for a single product.
+
+        Only returns days that had at least one sale; the caller fills
+        zero-days when rendering a continuous series.
+        """
+        ...
+
+    def find_orders_containing_product(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        *,
+        limit: int = 20,
+    ) -> tuple[Order, ...]:
+        """Most recent orders that include the product, processed_at desc."""
+        ...
+
     def upsert(self, order: Order) -> None: ...
 
 
@@ -184,6 +209,14 @@ class InventoryRepository(Protocol):
         limit: int = 50,
         cursor: str | None = None,
     ) -> Page[InventoryLevel]: ...
+
+    def levels_for_variants(
+        self,
+        store_id: StoreId,
+        variant_ids: tuple[VariantId, ...],
+    ) -> tuple[InventoryLevel, ...]:
+        """All inventory levels for the given variants, joined via inventory_items."""
+        ...
 
     def get_item(self, store_id: StoreId, gid: str) -> InventoryItem | None: ...
 

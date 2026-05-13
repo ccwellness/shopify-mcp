@@ -341,6 +341,32 @@ class AnalyticsKpiDay:
     computed_at: datetime
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProductSalesDay:
+    """One day's sales rollup for a single product.
+
+    Gross revenue: `SUM(quantity * price - total_discount)` from
+    `order_line_items` joined to `orders.processed_at` in the day's window.
+    Refunds are NOT netted — the schema doesn't decompose refunds to line
+    items, so per-product net revenue isn't computable here.
+    """
+
+    date: date
+    units: int
+    gross_revenue: Money
+    order_count: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProductOrderSummary:
+    """One recent order containing a product, with the product-specific
+    rollup of units + SKUs precomputed for the detail view."""
+
+    order: Order
+    units_of_product: int
+    skus_of_product: tuple[str, ...]
+
+
 # ---------------------------------------------------------------------------
 # Sync state
 # ---------------------------------------------------------------------------

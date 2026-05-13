@@ -1,0 +1,15 @@
+{% if page %}
+  {% for p in page.items %}
+    <tr>
+      <td>{{ p.store_id }}</td>
+      <td><strong><a href="{{ url_for('dashboard.product_detail', product_id=p.id) }}">{{ p.title }}</a></strong></td>
+      <td><code>{{ p.handle }}</code></td>
+      <td>{{ p.vendor or '—' }}</td>
+      <td>{{ p.product_type or '—' }}</td>
+      <td><span class="pill">{{ p.status.value }}</span></td>
+      <td class="num">{{ p.variants|length }}</td>
+      <td>{{ p.tags|join(', ') if p.tags else '—' }}</td>
+      <td>{{ p.updated_at.isoformat() }}</td>
+    </tr>
+  {% endfor %}
+{% endif %}

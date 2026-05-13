@@ -34,6 +34,7 @@ from app.domain.models import (
     Fulfillment,
     FulfillmentId,
     LocationId,
+    Money,
     Order,
     OrderAggregate,
     OrderId,
@@ -42,6 +43,7 @@ from app.domain.models import (
     OrderShippingAddress,
     Page,
     ProductId,
+    ProductSalesDay,
     StoreId,
     VariantId,
 )
@@ -352,6 +354,84 @@ class SqlAlchemyOrderRepository:
             currency_code=currency_code,
             status_counts=status_counts,
         )
+
+    def sales_by_day_for_product(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        since: datetime,
+        until: datetime,
+    ) -> tuple[ProductSalesDay, ...]:
+        # Per-day rollup of units + gross revenue + distinct order count
+        # for one product within the window. Refunds are not netted here;
+        # the schema doesn't decompose them to line items.
+        day_bucket = func.date_trunc("day", OrderRow.processed_at).label("day")
+        gross = func.coalesce(
+            func.sum(
+                OrderLineItemRow.price * OrderLineItemRow.quantity
+                - func.coalesce(OrderLineItemRow.total_discount, Decimal("0"))
+            ),
+            Decimal("0"),
+        )
+        rows = self._session.execute(
+            select(
+                day_bucket,
+                func.coalesce(func.sum(OrderLineItemRow.quantity), 0),
+                gross,
+                func.count(func.distinct(OrderRow.id)),
+            )
+            .select_from(OrderLineItemRow)
+            .join(OrderRow, OrderLineItemRow.order_id == OrderRow.id)
+            .where(
+                OrderLineItemRow.product_id == int(product_id),
+                OrderRow.store_id == int(store_id),
+                OrderRow.processed_at >= since,
+                OrderRow.processed_at < until,
+            )
+            .group_by(day_bucket)
+            .order_by(day_bucket)
+        ).all()
+        return tuple(
+            ProductSalesDay(
+                date=day.date() if hasattr(day, "date") else day,
+                units=int(units or 0),
+                gross_revenue=Money(revenue) if revenue is not None else Money("0"),
+                order_count=int(orders or 0),
+            )
+            for day, units, revenue, orders in rows
+        )
+
+    def find_orders_containing_product(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        *,
+        limit: int = 20,
+    ) -> tuple[Order, ...]:
+        # Two-step: pick the order ids first (DISTINCT + ORDER BY + LIMIT
+        # in one query), then load the full aggregates. Keeps the keyset
+        # logic and the eager-load path separate.
+        id_rows = self._session.execute(
+            select(OrderRow.id, OrderRow.processed_at)
+            .join(OrderLineItemRow, OrderLineItemRow.order_id == OrderRow.id)
+            .where(
+                OrderLineItemRow.product_id == int(product_id),
+                OrderRow.store_id == int(store_id),
+            )
+            .group_by(OrderRow.id, OrderRow.processed_at)
+            .order_by(OrderRow.processed_at.desc(), OrderRow.id.desc())
+            .limit(limit)
+        ).all()
+        order_ids = [oid for oid, _ in id_rows]
+        if not order_ids:
+            return ()
+        rows = (
+            self._session.scalars(select(OrderRow).where(OrderRow.id.in_(order_ids))).unique().all()
+        )
+        # Restore the (processed_at desc, id desc) order — the IN clause
+        # doesn't preserve it.
+        by_id = {r.id: r for r in rows}
+        return tuple(_row_to_domain(by_id[oid]) for oid in order_ids if oid in by_id)
 
     def upsert(self, order: Order) -> None:
         existing = self._session.scalar(

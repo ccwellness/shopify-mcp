@@ -41,6 +41,7 @@ from app.domain.models import (
     Page,
     Product,
     ProductId,
+    ProductSalesDay,
     Refund,
     RefundId,
     SessionsDay,
@@ -309,6 +310,50 @@ class InMemoryOrderRepository:
             status_counts=dict(status_counts),
         )
 
+    def sales_by_day_for_product(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        since: datetime,
+        until: datetime,
+    ) -> tuple[ProductSalesDay, ...]:
+        # Group line items in the window by day; revenue = qty*price - discount.
+        buckets: dict[date, tuple[int, Decimal, set[OrderId]]] = {}
+        for o in self._db.orders.values():
+            if o.store_id != store_id or not (since <= o.processed_at < until):
+                continue
+            for li in o.line_items:
+                if li.product_id != product_id:
+                    continue
+                day = o.processed_at.date()
+                units, gross, oids = buckets.get(day, (0, Decimal("0"), set()))
+                line_gross = (li.price * li.quantity) - (li.total_discount or Decimal("0"))
+                buckets[day] = (units + li.quantity, gross + line_gross, oids | {o.id})
+        return tuple(
+            ProductSalesDay(
+                date=day,
+                units=units,
+                gross_revenue=gross,
+                order_count=len(oids),
+            )
+            for day, (units, gross, oids) in sorted(buckets.items())
+        )
+
+    def find_orders_containing_product(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        *,
+        limit: int = 20,
+    ) -> tuple[Order, ...]:
+        matching = [
+            o
+            for o in self._db.orders.values()
+            if o.store_id == store_id and any(li.product_id == product_id for li in o.line_items)
+        ]
+        matching.sort(key=lambda o: (o.processed_at, o.id), reverse=True)
+        return tuple(matching[:limit])
+
     def upsert(self, order: Order) -> None:
         self._db.orders[order.id] = order
 
@@ -358,7 +403,8 @@ class InMemoryProductRepository:
     ) -> Page[Product]:
         ordered = sorted(
             (p for p in self._db.products.values() if _matches_product(p, spec)),
-            key=lambda p: (p.title.lower(), p.id),
+            key=lambda p: (p.updated_at, p.id),
+            reverse=True,
         )
         offset = _decode_cursor(cursor)
         page = tuple(ordered[offset : offset + limit])
@@ -422,6 +468,24 @@ class InMemoryInventoryRepository:
         page = tuple(ordered[offset : offset + limit])
         new_offset = offset + len(page)
         return Page(items=page, next_cursor=_next_cursor(new_offset, len(ordered)))
+
+    def levels_for_variants(
+        self,
+        store_id: StoreId,
+        variant_ids: tuple[VariantId, ...],
+    ) -> tuple[InventoryLevel, ...]:
+        if not variant_ids:
+            return ()
+        wanted = set(variant_ids)
+        # variant_id → set of inventory_item_ids for that variant, in the store
+        item_ids = {
+            item.id
+            for item in self._db.inventory_items.values()
+            if item.store_id == store_id and item.variant_id in wanted
+        }
+        return tuple(
+            lv for lv in self._db.inventory_levels.values() if lv.inventory_item_id in item_ids
+        )
 
     def get_item(self, store_id: StoreId, gid: str) -> InventoryItem | None:
         for item in self._db.inventory_items.values():

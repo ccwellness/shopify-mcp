@@ -1,0 +1,75 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Products — Shopify Connector{% endblock %}
+
+{% block content %}
+  <h1>Products</h1>
+  <p class="muted">Cross-store product catalog. Click a title to see per-product analytics.</p>
+
+  <form method="get" action="{{ url_for('dashboard.products') }}" class="filters">
+    <label>
+      Store id
+      <input type="text" name="store_id" value="{{ store_id_raw[0] if store_id_raw else '' }}">
+    </label>
+    <label>
+      Status
+      <select name="status">
+        <option value="">(any)</option>
+        {% for s in statuses %}
+          <option value="{{ s }}" {% if status_raw == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Vendor
+      <input type="text" name="vendor" value="{{ vendor_raw }}">
+    </label>
+    <label>
+      Type
+      <input type="text" name="product_type" value="{{ type_raw }}">
+    </label>
+    <label>
+      Title contains
+      <input type="text" name="title_query" value="{{ title_raw }}">
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if page %}
+    {% if page.items %}
+      <table class="compact">
+        <thead>
+          <tr>
+            <th>Store</th>
+            <th>Title</th>
+            <th>Handle</th>
+            <th>Vendor</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th class="num">Variants</th>
+            <th>Tags</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody id="product-rows">
+          {% include "dashboard/_products_rows.html" %}
+        </tbody>
+      </table>
+
+      {% if page.next_cursor %}
+        <p>
+          <button hx-get="{{ url_for('dashboard.products_rows', cursor=page.next_cursor,
+                                     store_id=store_id_raw[0] if store_id_raw else None,
+                                     status=status_raw, vendor=vendor_raw,
+                                     product_type=type_raw, title_query=title_raw) }}"
+                  hx-target="#product-rows"
+                  hx-swap="beforeend"
+                  hx-select="tr"
+                  class="secondary">Load more</button>
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="muted">No products match the filter.</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

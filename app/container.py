@@ -32,6 +32,7 @@ from app.services.audit import AuditService
 from app.services.auth import AuthService
 from app.services.inventory_reporting import InventoryReportingService
 from app.services.order_query import OrderQueryService
+from app.services.product_query import ProductQueryService
 from app.services.store_compare import StoreComparisonService
 from app.services.store_query import StoreQueryService
 from app.services.subscription_query import SubscriptionQueryService
@@ -115,6 +116,11 @@ class Container(containers.DeclarativeContainer):
 
     subscription_query_service = providers.Factory(
         SubscriptionQueryService,
+        uow_factory=uow_factory,
+    )
+
+    product_query_service = providers.Factory(
+        ProductQueryService,
         uow_factory=uow_factory,
     )
 
