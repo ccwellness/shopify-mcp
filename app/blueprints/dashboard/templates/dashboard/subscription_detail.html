@@ -1,0 +1,72 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Subscription {{ c.provider_contract_id[:8] }} — Shopify Connector{% endblock %}
+
+{% block content %}
+  <p><a href="{{ url_for('dashboard.subscriptions') }}">← All subscriptions</a></p>
+
+  <hgroup>
+    <h1>Subscription <code>{{ c.provider_contract_id[:8] }}</code></h1>
+    <p>
+      Store {{ c.store_id }} ·
+      <span class="pill">{{ c.provider.value }}</span>
+      <span class="pill">{{ c.status.value }}</span>
+    </p>
+  </hgroup>
+
+  <section>
+    <h3>Identifiers</h3>
+    <table class="compact">
+      <tbody>
+        <tr><th>Internal id</th><td>{{ c.id }}</td></tr>
+        <tr><th>Provider contract id</th><td><code>{{ c.provider_contract_id }}</code></td></tr>
+        <tr><th>Shopify GID</th><td><code>{{ c.gid or '—' }}</code></td></tr>
+        <tr><th>Shopify legacy id</th><td>{{ c.legacy_id or '—' }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>Schedule</h3>
+    <table class="compact">
+      <tbody>
+        <tr>
+          <th>Frequency</th>
+          <td>
+            {% if c.frequency_count and c.frequency_interval %}
+              every {{ c.frequency_count }} {{ c.frequency_interval }}{% if c.frequency_count != 1 %}s{% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        <tr><th>Next billing</th><td>{{ c.next_billing_date.isoformat() if c.next_billing_date else '—' }}</td></tr>
+        <tr><th>Currency</th><td>{{ c.currency_code or '—' }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>Customer</h3>
+    {% if c.customer_id is not none %}
+      <p>
+        Internal customer id <strong>{{ c.customer_id }}</strong> —
+        <a href="{{ url_for('dashboard.orders', customer_id=c.customer_id) }}">view this customer's orders →</a>
+      </p>
+    {% else %}
+      <p class="muted">
+        Not linked to a customer in our database. This is normal for OrderGroove subscribers
+        who haven't yet placed an order we've synced (the customer record lands when the
+        first order is pulled).
+      </p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h3>Timestamps</h3>
+    <table class="compact">
+      <tbody>
+        <tr><th>Created (in our DB)</th><td>{{ c.created_at.isoformat() }}</td></tr>
+        <tr><th>Last updated (in our DB)</th><td>{{ c.updated_at.isoformat() }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

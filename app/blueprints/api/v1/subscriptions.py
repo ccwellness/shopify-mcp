@@ -29,7 +29,7 @@ from app.blueprints.api.v1._params import (
 )
 from app.blueprints.api.v1._serialize import subscription_contract_to_json
 from app.domain.enums import SubscriptionProvider, SubscriptionStatus
-from app.domain.models import CustomerId, StoreId
+from app.domain.models import CustomerId, StoreId, SubscriptionContractId
 from app.domain.specs import SubscriptionSpec
 from app.services.subscription_query import DEFAULT_LIMIT, SubscriptionQueryService
 
@@ -91,4 +91,12 @@ def list_subscriptions() -> tuple[Response, int]:
     return jsonify(body), int(HTTPStatus.OK)
 
 
-_: tuple[Callable[..., object], ...] = (list_subscriptions,)
+@bp.get("/<int:contract_id>")
+def get_subscription(contract_id: int) -> tuple[Response, int]:
+    contract = _service().get_by_id(SubscriptionContractId(contract_id))
+    if contract is None:
+        return _error(f"subscription {contract_id} not found", HTTPStatus.NOT_FOUND)
+    return jsonify(subscription_contract_to_json(contract)), int(HTTPStatus.OK)
+
+
+_: tuple[Callable[..., object], ...] = (list_subscriptions, get_subscription)

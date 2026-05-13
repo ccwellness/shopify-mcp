@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.domain.models import Page, SubscriptionContract
+from app.domain.models import Page, SubscriptionContract, SubscriptionContractId
 from app.domain.repositories import UnitOfWork
 from app.domain.specs import SubscriptionSpec
 
@@ -36,3 +36,7 @@ class SubscriptionQueryService:
     ) -> Page[SubscriptionContract]:
         with self._uow_factory() as uow:
             return uow.subscriptions.find(spec, limit=_clamp_limit(limit), cursor=cursor)
+
+    def get_by_id(self, contract_id: SubscriptionContractId) -> SubscriptionContract | None:
+        with self._uow_factory() as uow:
+            return uow.subscriptions.get(contract_id)

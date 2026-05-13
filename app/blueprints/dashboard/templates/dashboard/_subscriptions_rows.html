@@ -3,7 +3,7 @@
     <tr>
       <td>{{ c.store_id }}</td>
       <td><span class="pill">{{ c.provider.value }}</span></td>
-      <td><code title="{{ c.provider_contract_id }}">{{ c.provider_contract_id[:8] }}</code></td>
+      <td><a href="{{ url_for('dashboard.subscription_detail', contract_id=c.id) }}"><code title="{{ c.provider_contract_id }}">{{ c.provider_contract_id[:8] }}</code></a></td>
       <td>{% if c.legacy_id is not none %}{{ c.legacy_id }}{% else %}—{% endif %}</td>
       <td>
         {% if c.customer_id is not none %}

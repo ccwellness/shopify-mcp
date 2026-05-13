@@ -461,6 +461,33 @@ def test_subscriptions_rows_partial_returns_fragment(
     assert "og-aaaa1" in body
 
 
+def test_subscriptions_list_links_each_row_to_detail(
+    dashboard_client: FlaskClient, fake_uow: UnitOfWork
+) -> None:
+    _seed_subscriptions(fake_uow)
+    body = dashboard_client.get("/subscriptions").get_data(as_text=True)
+    assert 'href="/subscriptions/1"' in body
+    assert 'href="/subscriptions/2"' in body
+
+
+def test_subscription_detail_renders(dashboard_client: FlaskClient, fake_uow: UnitOfWork) -> None:
+    _seed_subscriptions(fake_uow)
+    resp = dashboard_client.get("/subscriptions/1")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_data(as_text=True)
+    assert "Subscription" in body
+    assert "og-aaaa1111" in body  # full provider_contract_id in the identifiers table
+    assert "ordergroove" in body
+    assert "active" in body
+    assert "every 3 months" in body  # schedule line
+
+
+def test_subscription_detail_404_for_missing(dashboard_client: FlaskClient) -> None:
+    resp = dashboard_client.get("/subscriptions/9999")
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert "Subscription 9999" in resp.get_data(as_text=True)
+
+
 # ---------------------------------------------------------------------------
 # Cross-cutting — session gate + audit-log isolation
 # ---------------------------------------------------------------------------

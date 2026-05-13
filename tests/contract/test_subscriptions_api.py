@@ -169,3 +169,24 @@ def test_list_subscriptions_rejects_non_integer_store_id(authed_client: FlaskCli
 def test_list_subscriptions_rejects_non_integer_customer_id(authed_client: FlaskClient) -> None:
     resp = authed_client.get("/api/v1/subscriptions?customer_id=not-an-int")
     assert resp.status_code == HTTPStatus.BAD_REQUEST
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/subscriptions/<id>
+# ---------------------------------------------------------------------------
+
+
+def test_get_subscription_returns_full_record(authed_client: FlaskClient, seed: UnitOfWork) -> None:
+    resp = authed_client.get("/api/v1/subscriptions/1")
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.get_json()
+    assert body["id"] == 1
+    assert body["provider"] == "ordergroove"
+    assert body["status"] == "active"
+    assert body["provider_contract_id"] == "og-1"
+
+
+def test_get_subscription_404_for_missing(authed_client: FlaskClient) -> None:
+    resp = authed_client.get("/api/v1/subscriptions/9999")
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+    assert "not found" in resp.get_json()["error"]

@@ -27,7 +27,14 @@ from werkzeug.wrappers import Response as WerkzeugResponse
 
 from app.blueprints.dashboard import bp
 from app.domain.enums import FinancialStatus, SubscriptionProvider, SubscriptionStatus
-from app.domain.models import ApiTokenId, CustomerId, LocationId, OrderId, StoreId
+from app.domain.models import (
+    ApiTokenId,
+    CustomerId,
+    LocationId,
+    OrderId,
+    StoreId,
+    SubscriptionContractId,
+)
 from app.domain.specs import OrderSpec, SubscriptionSpec
 from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService
@@ -461,6 +468,16 @@ def subscriptions() -> str:
 def subscriptions_rows() -> str:
     """HTMX endpoint — returns just the next page of rows as an HTML fragment."""
     return _render_subscriptions(partial=True)
+
+
+@bp.get("/subscriptions/<int:contract_id>")
+def subscription_detail(contract_id: int) -> tuple[str, int] | str:
+    contract = _subscription_query_service().get_by_id(SubscriptionContractId(contract_id))
+    if contract is None:
+        return render_template(
+            "dashboard/not_found.html", what=f"Subscription {contract_id}"
+        ), HTTPStatus.NOT_FOUND
+    return render_template("dashboard/subscription_detail.html", c=contract)
 
 
 def _render_subscriptions(*, partial: bool) -> str:
