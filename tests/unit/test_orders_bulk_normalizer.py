@@ -63,18 +63,32 @@ def _line_payload(**overrides: Any) -> dict[str, Any]:
 
 def test_source_name_web_for_normal_order() -> None:
     result = normalize_order_bulk(LUBELIFE, _base_payload(sourceName="web"))
-    assert result.order.source_name == "web"
+    assert result.order.source_name == "WEB"
 
 
 def test_source_name_draft_for_admin_created_order() -> None:
     result = normalize_order_bulk(LUBELIFE, _base_payload(sourceName="shopify_draft_order"))
-    assert result.order.source_name == "shopify_draft_order"
+    assert result.order.source_name == "SHOPIFY_DRAFT_ORDER"
+
+
+def test_source_name_is_normalized_to_upper_for_mixed_casing() -> None:
+    # Shopify ships both 'tiktok' and 'TikTok' in the same feed — we
+    # collapse them to a single canonical value at write time.
+    lower = normalize_order_bulk(LUBELIFE, _base_payload(sourceName="tiktok"))
+    mixed = normalize_order_bulk(LUBELIFE, _base_payload(sourceName="TikTok"))
+    assert lower.order.source_name == "TIKTOK"
+    assert mixed.order.source_name == "TIKTOK"
 
 
 def test_source_name_is_none_when_missing() -> None:
     payload = _base_payload()
     payload.pop("sourceName", None)
     result = normalize_order_bulk(LUBELIFE, payload)
+    assert result.order.source_name is None
+
+
+def test_source_name_is_none_when_empty_string() -> None:
+    result = normalize_order_bulk(LUBELIFE, _base_payload(sourceName=""))
     assert result.order.source_name is None
 
 

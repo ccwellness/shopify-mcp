@@ -129,6 +129,15 @@ def _legacy_id(value: Any) -> int:
     return int(str(value))
 
 
+def _source_name(value: Any) -> str | None:
+    """Normalize `sourceName` to UPPER so filters and indicators don't have
+    to deal with Shopify's casing inconsistencies (e.g. both 'tiktok' and
+    'TikTok' have been seen in the same store's feed)."""
+    if value is None or value == "":
+        return None
+    return str(value).upper()
+
+
 # ---------------------------------------------------------------------------
 # Customer
 # ---------------------------------------------------------------------------
@@ -305,7 +314,7 @@ def normalize_order_bulk(
         total_tax=_shop_money(payload.get("totalTaxSet")),
         total_discounts=_shop_money(payload.get("totalDiscountsSet")),
         total_shipping=_shop_money(payload.get("totalShippingPriceSet")),
-        source_name=payload.get("sourceName"),
+        source_name=_source_name(payload.get("sourceName")),
         presentment_subtotal_price=_presentment_money(payload.get("subtotalPriceSet")),
         presentment_total_price=_presentment_money(payload.get("totalPriceSet")),
         processed_at=_required_ts(

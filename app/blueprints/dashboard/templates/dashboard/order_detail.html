@@ -8,7 +8,7 @@
   <hgroup>
     <h1>
       {{ order.name }}
-      {% if order.source_name == 'shopify_draft_order' %}<span class="pill draft" title="Created from the Shopify admin as a draft order">draft</span>{% endif %}
+      {% if order.source_name == 'SHOPIFY_DRAFT_ORDER' %}<span class="pill draft" title="Created from the Shopify admin as a draft order">draft</span>{% endif %}
     </h1>
     <p>
       Store {{ order.store_id }} ·

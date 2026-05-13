@@ -110,6 +110,14 @@ def _presentment_money(set_field: dict[str, Any] | None) -> Decimal | None:
     return _opt_decimal(inner.get("amount"))
 
 
+def _source_name(value: Any) -> str | None:
+    """UPPER-case the source name to match bulk-normalizer canonical form
+    (Shopify ships both 'tiktok' and 'TikTok' so we normalize on read)."""
+    if value is None or value == "":
+        return None
+    return str(value).upper()
+
+
 # ---------------------------------------------------------------------------
 # Customer
 # ---------------------------------------------------------------------------
@@ -280,7 +288,7 @@ def normalize_order_webhook(store_id: StoreId, payload: dict[str, Any]) -> Norma
         total_tax=_money(payload.get("total_tax")),
         total_discounts=_money(payload.get("total_discounts")),
         total_shipping=_shop_money(payload.get("total_shipping_price_set")),
-        source_name=payload.get("source_name"),
+        source_name=_source_name(payload.get("source_name")),
         presentment_subtotal_price=_presentment_money(payload.get("subtotal_price_set")),
         presentment_total_price=_presentment_money(payload.get("total_price_set")),
         processed_at=_required_ts(
