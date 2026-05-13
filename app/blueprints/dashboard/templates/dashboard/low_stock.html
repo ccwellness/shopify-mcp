@@ -49,7 +49,7 @@
               <td class="num"><strong>{{ lvl.available | count }}</strong></td>
               <td class="num">{{ lvl.on_hand | count }}</td>
               <td class="num">{{ lvl.committed | count }}</td>
-              <td>{{ lvl.updated_at.isoformat() if lvl.updated_at else '—' }}</td>
+              <td>{{ lvl.updated_at | datetime_pt }}</td>
             </tr>
           {% endfor %}
         </tbody>

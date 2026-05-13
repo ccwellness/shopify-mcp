@@ -18,9 +18,9 @@
           every {{ c.frequency_count }} {{ c.frequency_interval }}{% if c.frequency_count != 1 %}s{% endif %}
         {% else %}—{% endif %}
       </td>
-      <td>{{ c.next_billing_date.date().isoformat() if c.next_billing_date else '—' }}</td>
+      <td>{{ c.next_billing_date | date_mdy }}</td>
       <td>{{ c.currency_code or '—' }}</td>
-      <td>{{ c.updated_at.isoformat() }}</td>
+      <td>{{ c.updated_at | datetime_pt }}</td>
     </tr>
   {% endfor %}
 {% endif %}

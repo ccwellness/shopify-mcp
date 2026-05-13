@@ -24,8 +24,8 @@
 
   <p class="muted">
     <small>
-      Created {{ product.created_at.isoformat() }} ·
-      Updated {{ product.updated_at.isoformat() }}
+      Created {{ product.created_at | datetime_pt }} ·
+      Updated {{ product.updated_at | datetime_pt }}
     </small>
   </p>
 
@@ -103,7 +103,7 @@
               <td class="num">{{ lv.on_hand | count }}</td>
               <td class="num">{{ lv.committed | count }}</td>
               <td class="num">{{ lv.incoming | count }}</td>
-              <td>{{ lv.updated_at.isoformat() }}</td>
+              <td>{{ lv.updated_at | datetime_pt }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -117,7 +117,7 @@
     <h3>Sales over time</h3>
     <p class="muted">
       <small>
-        Window {{ since.date().isoformat() }} → {{ until.date().isoformat() }}.
+        Window {{ since | date_mdy }} → {{ until | date_mdy }}.
         Gross revenue — does not net refunds (refund rows aren't decomposed to line items in our schema).
       </small>
     </p>
@@ -135,7 +135,7 @@
         <tbody>
           {% for d in sales_days %}
             <tr>
-              <td>{{ d.date.isoformat() }}</td>
+              <td>{{ d.date | date_mdy }}</td>
               <td class="num">{{ d.units | count }}</td>
               <td class="num">{{ d.gross_revenue | currency }}</td>
               <td class="num">{{ d.order_count | count }}</td>
@@ -174,7 +174,7 @@
           {% for r in recent %}
             <tr>
               <td><strong><a href="{{ url_for('dashboard.order_detail', order_id=r.order.id) }}">{{ r.order.name }}</a></strong></td>
-              <td>{{ r.order.processed_at.isoformat() if r.order.processed_at else '—' }}</td>
+              <td>{{ r.order.processed_at | datetime_pt }}</td>
               <td>{% if r.order.financial_status %}<span class="pill" data-status="{{ r.order.financial_status.value }}">{{ r.order.financial_status.value }}</span>{% endif %}</td>
               <td class="num">{{ r.order.total_price | currency }} {{ r.order.currency_code or '' }}</td>
               <td class="num">{{ r.units_of_product | count }}</td>

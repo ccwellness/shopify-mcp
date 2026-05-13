@@ -17,14 +17,18 @@ Rules (from the design handoff README §4):
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime
+from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint
 
 MINUS = "−"  # U+2212 MINUS SIGN — wider than hyphen, vertically centered
 EMPTY = "—"  # em-dash, canonical empty placeholder
 _SMALL_PERCENT_CUTOFF = Decimal("0.1")
+_PT = ZoneInfo("America/Los_Angeles")
 
 
 def _to_decimal(v: Any) -> Decimal | None:  # noqa: PLR0911 — each branch handles a distinct input type
@@ -93,6 +97,31 @@ def delta(v: Any, kind: str = "percent") -> str:
     return f"{sign}${abs_v:,.2f}"
 
 
+def date_mdy(v: Any) -> str:
+    """`mm/dd/yyyy`. Accepts `date` or `datetime`; datetimes are interpreted
+    in PT (`America/Los_Angeles`) so the displayed day matches the PT date."""
+    if v is None:
+        return EMPTY
+    if isinstance(v, datetime):
+        aware = v if v.tzinfo is not None else v.replace(tzinfo=UTC)
+        return aware.astimezone(_PT).strftime("%m/%d/%Y")
+    if isinstance(v, date_cls):
+        return v.strftime("%m/%d/%Y")
+    return EMPTY
+
+
+def datetime_pt(v: Any) -> str:
+    """`mm/dd/yyyy hh:mm AM/PM PT` — datetime rendered in Pacific Time.
+
+    Naive datetimes are assumed to be UTC (we always store TZ-aware
+    timestamps, but defensive handling avoids crashes on hand-built data).
+    """
+    if not isinstance(v, datetime):
+        return EMPTY
+    aware = v if v.tzinfo is not None else v.replace(tzinfo=UTC)
+    return aware.astimezone(_PT).strftime("%m/%d/%Y %I:%M %p PT")
+
+
 def register(bp: Blueprint) -> None:
     """Attach the formatters as app-wide Jinja filters via the blueprint."""
     bp.add_app_template_filter(asp, name="asp")
@@ -100,3 +129,5 @@ def register(bp: Blueprint) -> None:
     bp.add_app_template_filter(percent, name="percent")
     bp.add_app_template_filter(count, name="count")
     bp.add_app_template_filter(delta, name="delta")
+    bp.add_app_template_filter(date_mdy, name="date_mdy")
+    bp.add_app_template_filter(datetime_pt, name="datetime_pt")

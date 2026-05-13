@@ -7,7 +7,9 @@ gets at least one positive and one negative case.
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -15,12 +17,15 @@ from app.blueprints.dashboard.filters import (
     asp,
     count,
     currency,
+    date_mdy,
+    datetime_pt,
     delta,
     percent,
 )
 
 MINUS = "−"  # U+2212
 EMPTY = "—"  # em-dash
+PT = ZoneInfo("America/Los_Angeles")
 
 
 # ---------------------------------------------------------------------------
@@ -155,3 +160,70 @@ def test_negative_percent_uses_true_minus_not_hyphen() -> None:
     out = percent(Decimal("-2"))
     assert "-" not in out
     assert out.startswith(MINUS)
+
+
+# ---------------------------------------------------------------------------
+# date_mdy — mm/dd/yyyy
+# ---------------------------------------------------------------------------
+
+
+def test_date_mdy_formats_pure_date() -> None:
+    assert date_mdy(date(2026, 5, 13)) == "05/13/2026"
+
+
+def test_date_mdy_uses_pt_date_for_aware_datetime() -> None:
+    # 2026-05-13 02:00 UTC = 2026-05-12 19:00 PT (PDT, UTC-7).
+    aware = datetime(2026, 5, 13, 2, 0, tzinfo=UTC)
+    assert date_mdy(aware) == "05/12/2026"
+
+
+def test_date_mdy_assumes_utc_for_naive_datetime() -> None:
+    # Same UTC instant as above but TZ-naive.
+    naive = datetime(2026, 5, 13, 2, 0)
+    assert date_mdy(naive) == "05/12/2026"
+
+
+def test_date_mdy_returns_em_dash_for_none() -> None:
+    assert date_mdy(None) == EMPTY
+
+
+def test_date_mdy_returns_em_dash_for_non_date_input() -> None:
+    assert date_mdy("nope") == EMPTY
+    assert date_mdy(42) == EMPTY
+
+
+# ---------------------------------------------------------------------------
+# datetime_pt — mm/dd/yyyy hh:mm AM/PM PT
+# ---------------------------------------------------------------------------
+
+
+def test_datetime_pt_renders_pacific_time() -> None:
+    # 2026-05-13 16:35 UTC = 2026-05-13 09:35 PT (PDT, UTC-7 in May).
+    aware = datetime(2026, 5, 13, 16, 35, tzinfo=UTC)
+    assert datetime_pt(aware) == "05/13/2026 09:35 AM PT"
+
+
+def test_datetime_pt_handles_pm_correctly() -> None:
+    # 2026-05-13 23:05 UTC = 2026-05-13 16:05 PT = 04:05 PM PT.
+    aware = datetime(2026, 5, 13, 23, 5, tzinfo=UTC)
+    assert datetime_pt(aware) == "05/13/2026 04:05 PM PT"
+
+
+def test_datetime_pt_handles_pst_offset() -> None:
+    # January is PST (UTC-8). 2026-01-15 20:00 UTC = 12:00 PM PT.
+    aware = datetime(2026, 1, 15, 20, 0, tzinfo=UTC)
+    assert datetime_pt(aware) == "01/15/2026 12:00 PM PT"
+
+
+def test_datetime_pt_assumes_utc_for_naive_datetime() -> None:
+    naive = datetime(2026, 5, 13, 16, 35)
+    assert datetime_pt(naive) == "05/13/2026 09:35 AM PT"
+
+
+def test_datetime_pt_returns_em_dash_for_none() -> None:
+    assert datetime_pt(None) == EMPTY
+
+
+def test_datetime_pt_returns_em_dash_for_date_only() -> None:
+    # Pure dates have no time component → can't render hh:mm.
+    assert datetime_pt(date(2026, 5, 13)) == EMPTY

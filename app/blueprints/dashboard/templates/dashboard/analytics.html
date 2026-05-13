@@ -52,7 +52,7 @@
         {% for r in rows %}
           <tr>
             <td><strong>{{ store_label.get(r.store_id, r.store_id) }}</strong></td>
-            <td>{{ r.date.isoformat() }}</td>
+            <td>{{ r.date | date_mdy }}</td>
             <td class="num">{{ r.sessions | count }}</td>
             <td class="num">{{ r.orders | count }}</td>
             <td class="num">{{ r.units | count }}</td>

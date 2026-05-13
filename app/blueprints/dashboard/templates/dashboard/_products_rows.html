@@ -9,7 +9,7 @@
       <td><span class="pill" data-status="{{ p.status.value }}">{{ p.status.value }}</span></td>
       <td class="num">{{ p.variants|length | count }}</td>
       <td>{{ p.tags|join(', ') if p.tags else '—' }}</td>
-      <td>{{ p.updated_at.isoformat() }}</td>
+      <td>{{ p.updated_at | datetime_pt }}</td>
     </tr>
   {% endfor %}
 {% endif %}

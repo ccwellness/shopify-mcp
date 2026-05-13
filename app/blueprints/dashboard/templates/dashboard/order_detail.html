@@ -11,7 +11,7 @@
       Store {{ order.store_id }} ·
       {% if order.financial_status %}<span class="pill" data-status="{{ order.financial_status.value }}">{{ order.financial_status.value }}</span>{% endif %}
       {% if order.fulfillment_status %}<span class="pill" data-status="{{ order.fulfillment_status.value }}">{{ order.fulfillment_status.value }}</span>{% endif %}
-      {% if order.processed_at %} · processed {{ order.processed_at.isoformat() }}{% endif %}
+      {% if order.processed_at %} · processed {{ order.processed_at | datetime_pt }}{% endif %}
     </p>
   </hgroup>
 
@@ -117,7 +117,7 @@
                   <code>{{ f.tracking_number }}</code>
                 {% else %}—{% endif %}
               </td>
-              <td>{{ f.created_at.isoformat() if f.created_at else '—' }}</td>
+              <td>{{ f.created_at | datetime_pt }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -142,7 +142,7 @@
         <tbody>
           {% for r in refunds %}
             <tr>
-              <td>{{ r.created_at.isoformat() }}</td>
+              <td>{{ r.created_at | datetime_pt }}</td>
               <td class="num">{{ r.amount | currency }}</td>
               <td>{{ r.currency_code }}</td>
               <td>{{ r.note or '—' }}</td>

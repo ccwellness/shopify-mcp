@@ -65,8 +65,8 @@
       </table>
 
       <p class="muted">
-        Window: <code>{{ comparison.since.isoformat() }}</code> →
-        <code>{{ comparison.until.isoformat() }}</code> (half-open).
+        Window: <code>{{ comparison.since | datetime_pt }}</code> →
+        <code>{{ comparison.until | datetime_pt }}</code> (half-open).
       </p>
     {% else %}
       <p class="muted">No active stores match the filter.</p>
