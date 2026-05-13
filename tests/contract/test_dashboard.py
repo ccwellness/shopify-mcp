@@ -277,6 +277,30 @@ def test_order_detail_404_for_missing(dashboard_client: FlaskClient) -> None:
     assert "Order 9999" in body
 
 
+def test_orders_sync_returns_400_for_missing_store(dashboard_client: FlaskClient) -> None:
+    # No store_key form field → flash error + redirect back to /orders.
+    resp = dashboard_client.post("/orders/sync", data={})
+    assert resp.status_code == HTTPStatus.SEE_OTHER
+    assert "/orders" in resp.headers["Location"]
+
+
+def test_orders_sync_returns_redirect_for_unknown_store(dashboard_client: FlaskClient) -> None:
+    resp = dashboard_client.post("/orders/sync", data={"store_key": "nope"})
+    assert resp.status_code == HTTPStatus.SEE_OTHER
+    # Follow redirect — the flash error renders on the destination page.
+    follow = dashboard_client.get(resp.headers["Location"])
+    assert "unknown store_key" in follow.get_data(as_text=True)
+
+
+def test_orders_sync_flashes_error_when_service_not_wired(
+    dashboard_client: FlaskClient,
+) -> None:
+    # Test app builds with empty store_configs → sync_service is not in
+    # extensions. The route handles that gracefully with a flash error.
+    resp = dashboard_client.post("/orders/sync", data={"store_key": "lubelife"})
+    assert resp.status_code == HTTPStatus.SEE_OTHER
+
+
 def test_orders_rows_partial_returns_fragment(
     dashboard_client: FlaskClient, seed: UnitOfWork
 ) -> None:

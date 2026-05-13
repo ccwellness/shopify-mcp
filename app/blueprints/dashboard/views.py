@@ -8,6 +8,8 @@ page with a flash-style error rather than returning JSON.
 
 from __future__ import annotations
 
+import logging
+import threading
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
@@ -33,6 +35,7 @@ from app.domain.enums import (
     ProductStatus,
     SubscriptionProvider,
     SubscriptionStatus,
+    SyncResource,
 )
 from app.domain.models import (
     ApiTokenId,
@@ -42,6 +45,7 @@ from app.domain.models import (
     ProductId,
     StoreId,
     SubscriptionContractId,
+    SyncStateRow,
 )
 from app.domain.specs import OrderSpec, ProductSpec, SubscriptionSpec
 from app.services.analytics import AnalyticsService
@@ -316,6 +320,79 @@ def orders_rows() -> str:
     return _render_orders(partial=True)
 
 
+_log = logging.getLogger(__name__)
+
+
+def _run_orders_sync_background(app: Any, store_key: str) -> None:
+    """Run `sync_orders` inside a fresh app context. Errors are written to
+    `sync_state.last_error` so the dashboard can surface them on next reload.
+
+    Runs in a daemon thread — Shopify bulk operations can take minutes,
+    longer than any reasonable HTTP timeout.
+    """
+    with app.app_context():
+        try:
+            svc = app.extensions["sync_service"]
+            svc.sync_orders(store_key)
+        except Exception as exc:  # noqa: BLE001 — last-chance error capture for background thread
+            _log.exception("orders sync failed for store=%s", store_key)
+            uow_factory = app.extensions["container"].uow_factory()
+            now = datetime.now(tz=UTC)
+            try:
+                with uow_factory() as uow:
+                    store = uow.stores.get_by_key(store_key)
+                    if store is not None:
+                        existing = uow.sync_state.get(store.id, SyncResource.ORDERS)
+                        uow.sync_state.upsert(
+                            SyncStateRow(
+                                store_id=store.id,
+                                resource=SyncResource.ORDERS,
+                                last_completed_at=(
+                                    existing.last_completed_at if existing else None
+                                ),
+                                last_cursor=existing.last_cursor if existing else None,
+                                last_error=str(exc)[:500],
+                                last_error_at=now,
+                                updated_at=now,
+                            )
+                        )
+                        uow.commit()
+            except Exception:  # noqa: BLE001 — error-write itself failed; log + give up
+                _log.exception("failed to record orders sync error for store=%s", store_key)
+
+
+@bp.post("/orders/sync")
+def orders_sync() -> WerkzeugResponse:
+    """Kick off a background bulk orders sync for the chosen store."""
+    store_key = (request.form.get("store_key") or "").strip()
+    if not store_key:
+        flash("store_key is required", category="sync_error")
+        return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
+
+    configs = current_app.extensions.get("store_configs") or {}
+    if store_key not in configs:
+        flash(f"unknown store_key: {store_key!r}", category="sync_error")
+        return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
+
+    if "sync_service" not in current_app.extensions:
+        flash("sync service is not wired (no store credentials configured)", category="sync_error")
+        return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
+
+    app = current_app._get_current_object()  # type: ignore[attr-defined]  # noqa: SLF001
+    threading.Thread(
+        target=_run_orders_sync_background,
+        args=(app, store_key),
+        daemon=True,
+        name=f"orders-sync-{store_key}",
+    ).start()
+
+    flash(
+        f"Sync started for {store_key}. Refresh in a minute to see updated state.",
+        category="sync_info",
+    )
+    return redirect(url_for("dashboard.orders"), code=HTTPStatus.SEE_OTHER)
+
+
 @bp.get("/orders/<int:order_id>")
 def order_detail(order_id: int) -> tuple[str, int] | str:
     svc = _order_query_service()
@@ -381,6 +458,16 @@ def _render_orders(*, partial: bool) -> str:
         page = _order_query_service().list_orders(spec, limit=ORDER_DEFAULT_LIMIT, cursor=cursor)
 
     template = "dashboard/_orders_rows.html" if partial else "dashboard/orders.html"
+    # Stores + per-store ORDERS sync state for the "Sync from Shopify" widget.
+    # Only the full-page render needs them; the HTMX rows partial doesn't.
+    sync_states: dict[str, SyncStateRow | None] = {}
+    stores: tuple = ()
+    if not partial:
+        stores = _store_query_service().list_active()
+        uow_factory = current_app.extensions["container"].uow_factory()
+        with uow_factory() as uow:
+            for s in stores:
+                sync_states[s.store_key] = uow.sync_state.get(s.id, SyncResource.ORDERS)
     return render_template(
         template,
         since_raw=since_raw,
@@ -391,6 +478,10 @@ def _render_orders(*, partial: bool) -> str:
         financial_statuses=[s.value for s in FinancialStatus],
         page=page,
         errors=errors,
+        stores=stores,
+        sync_states=sync_states,
+        sync_info=get_flashed_messages(category_filter=["sync_info"]),
+        sync_errors=get_flashed_messages(category_filter=["sync_error"]),
     )
 
 

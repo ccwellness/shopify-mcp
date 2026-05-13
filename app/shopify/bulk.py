@@ -16,6 +16,7 @@ running we surface the userError so the caller can decide.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -26,6 +27,10 @@ import httpx
 
 from app.shopify.client import ShopifyClient
 from app.shopify.errors import ShopifyError, ShopifyGraphQLError
+
+_log = logging.getLogger(__name__)
+_DOWNLOAD_MAX_ATTEMPTS = 4  # 1 initial + 3 retries — handles flaky long-running streams
+_DOWNLOAD_BACKOFF_SECONDS = 3.0
 
 
 class BulkOperationStatus(StrEnum):
@@ -146,7 +151,38 @@ class BulkOperationsClient:
     # -----------------------------------------------------------------------
 
     def download_jsonl(self, url: str) -> Iterator[bytes]:
-        """Stream the JSONL output line-by-line. Yields raw bytes per line."""
+        """Stream the JSONL output line-by-line. Yields raw bytes per line.
+
+        Shopify's bulk-op URLs point at S3 and the connection can be cut
+        mid-stream on large downloads (we've observed truncation at ~85 MB
+        of a 95 MB file with `httpx.RemoteProtocolError: peer closed
+        connection`). Retry the whole download up to `_DOWNLOAD_MAX_ATTEMPTS`
+        times on transport errors — the URL is stable for ~6 hours so
+        re-requesting is safe, and the consumer side replaces records
+        idempotently via the GID unique constraint.
+        """
+        last_error: Exception | None = None
+        for attempt in range(1, _DOWNLOAD_MAX_ATTEMPTS + 1):
+            try:
+                yield from self._download_once(url)
+                return
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError) as exc:
+                last_error = exc
+                if attempt < _DOWNLOAD_MAX_ATTEMPTS:
+                    backoff = _DOWNLOAD_BACKOFF_SECONDS * attempt
+                    _log.warning(
+                        "bulk JSONL download truncated (attempt %d/%d): %s — retrying in %.1fs",
+                        attempt,
+                        _DOWNLOAD_MAX_ATTEMPTS,
+                        exc,
+                        backoff,
+                    )
+                    time.sleep(backoff)
+        raise BulkOperationError(
+            f"bulk JSONL download failed after {_DOWNLOAD_MAX_ATTEMPTS} attempts: {last_error}"
+        ) from last_error
+
+    def _download_once(self, url: str) -> Iterator[bytes]:
         with self._download_http.stream("GET", url) as resp:
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
