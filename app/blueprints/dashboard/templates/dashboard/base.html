@@ -1,36 +1,30 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="auto">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Shopify Connector{% endblock %}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="{{ url_for('dashboard.static', filename='css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('dashboard.static', filename='css/ensemble.css') }}">
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
-  <style>
-    /* Lightweight overrides for tabular data + nav layout. */
-    nav ul li a[aria-current="page"] { font-weight: 700; }
-    table.compact td, table.compact th { padding: 0.4rem 0.6rem; font-size: 0.9rem; }
-    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
-    .pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem; background: var(--pico-muted-border-color); }
-    .warning { background: var(--pico-form-element-invalid-border-color); padding: 0.5rem 1rem; border-radius: 0.25rem; }
-    .muted { color: var(--pico-muted-color); }
-    form.filters { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; }
-    form.filters > * { min-width: 9rem; }
-    .num { font-variant-numeric: tabular-nums; text-align: right; }
-  </style>
 </head>
 <body>
   <header>
     <nav>
       <ul>
-        <li><strong><a href="{{ url_for('dashboard.home') }}">Shopify Connector</a></strong></li>
+        <li>
+          <a href="{{ url_for('dashboard.home') }}" class="ensemble-wordmark-sm">shopify connector</a>
+        </li>
       </ul>
       <ul>
         <li><a href="{{ url_for('dashboard.compare') }}"
                {% if request.endpoint == 'dashboard.compare' %}aria-current="page"{% endif %}>
             Compare</a></li>
         <li><a href="{{ url_for('dashboard.orders') }}"
-               {% if request.endpoint == 'dashboard.orders' %}aria-current="page"{% endif %}>
+               {% if request.endpoint and request.endpoint.startswith('dashboard.order') %}aria-current="page"{% endif %}>
             Orders</a></li>
         <li><a href="{{ url_for('dashboard.low_stock') }}"
                {% if request.endpoint == 'dashboard.low_stock' %}aria-current="page"{% endif %}>
@@ -39,7 +33,7 @@
                {% if request.endpoint == 'dashboard.analytics' %}aria-current="page"{% endif %}>
             Analytics</a></li>
         <li><a href="{{ url_for('dashboard.subscriptions') }}"
-               {% if request.endpoint and request.endpoint.startswith('dashboard.subscriptions') %}aria-current="page"{% endif %}>
+               {% if request.endpoint and request.endpoint.startswith('dashboard.subscription') %}aria-current="page"{% endif %}>
             Subscriptions</a></li>
         <li><a href="{{ url_for('dashboard.products') }}"
                {% if request.endpoint and request.endpoint.startswith('dashboard.product') %}aria-current="page"{% endif %}>
@@ -51,7 +45,7 @@
           <li class="muted"><small>{{ session.get('token_name') }}</small></li>
           <li>
             <form method="post" action="{{ url_for('dashboard.logout') }}" style="margin: 0;">
-              <button type="submit" class="secondary" style="padding: 0.25rem 0.75rem;">Sign out</button>
+              <button type="submit" class="ghost">Sign out</button>
             </form>
           </li>
         {% endif %}
@@ -69,7 +63,7 @@
   </main>
 
   <footer>
-    <small class="muted">Internal dashboard — Phase 2 MVP. Local-only; no auth.</small>
+    <small>Internal dashboard · session-gated · same tokens authenticate the API.</small>
   </footer>
 </body>
 </html>

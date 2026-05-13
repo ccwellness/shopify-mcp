@@ -1,0 +1,119 @@
+/* ============================================================
+   Ensemble Design Tokens (adapted from design_handoff_ensemble_theme/tokens.css)
+   - Bootstrap bridge omitted; this app uses plain Jinja templates.
+   - All colors, spacing, type sizes per the canonical spec.
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* density · 0.85 compact · 1 regular · 1.15 spacious (default) */
+  --density: 1.15;
+
+  /* radius — 6-8 for buttons/inputs, 8-12 for cards */
+  --radius-base: 8px;
+  --radius-sm: calc(var(--radius-base) * 0.75);
+  --radius-md: var(--radius-base);
+  --radius-lg: calc(var(--radius-base) * 1.5);
+  --radius-xl: calc(var(--radius-base) * 2);
+  --radius-pill: 999px;
+
+  /* spacing — 4 px base */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+  --sp-10: 40px; --sp-12: 48px; --sp-16: 64px;
+
+  /* type stacks */
+  --font-heading: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans:    'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+
+  /* type sizes */
+  --fs-10: 10px; --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-14: 14px;
+  --fs-15: 15px; --fs-16: 16px; --fs-17: 17px; --fs-18: 18px; --fs-20: 20px;
+  --fs-22: 22px; --fs-24: 24px; --fs-28: 28px; --fs-32: 32px; --fs-44: 44px; --fs-60: 60px;
+
+  /* surfaces — 3-step quiet ramp */
+  --bg-deep:   #0a0f1e;
+  --bg-base:   #0f172a;
+  --bg-card:   #1e293b;
+  --row-hover: #253348;
+
+  /* borders */
+  --border:       #334155;
+  --border-hover: #475569;
+
+  /* text */
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-dim:       #64748b;
+  --text-on-accent: #ffffff;
+
+  /* accent */
+  --accent:        #0ea5e9;
+  --accent-hover:  #38bdf8;
+  --accent-active: #0284c7;
+  --accent-glow:   rgba(14, 165, 233, 0.15);
+  --accent-ring:   rgba(14, 165, 233, 0.25);
+  --wordmark:      #4e6890;   /* RESERVED for hero wordmark only */
+  --amber:         #f59e0b;
+
+  /* semantic status — fill / fg pairs */
+  --success-fill: #166534;  --success-fg: #4ade80;
+  --warning-fill: #713f12;  --warning-fg: #fbbf24;
+  --danger-fill:  #7f1d1d;  --danger-fg:  #f87171;
+  --neutral-fill: #334155;  --neutral-fg: #94a3b8;
+  --info-fill:    #1e3a8a;  --info-fg:    #60a5fa;
+
+  /* chart palette */
+  --chart-1: #0ea5e9;
+  --chart-2: #6366f1;
+  --chart-3: #4ade80;
+  --chart-4: #fbbf24;
+  --chart-5: #f87171;
+  --chart-6: #94a3b8;
+
+  /* shadows — sparingly, only on truly floating surfaces */
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 0 rgba(0, 0, 0, .3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, .5);
+}
+
+[data-theme="light"] {
+  --bg-deep:   #f1f5f9;
+  --bg-base:   #f8fafc;
+  --bg-card:   #ffffff;
+  --row-hover: #f1f5f9;
+
+  --border:       #e2e8f0;
+  --border-hover: #cbd5e1;
+
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-dim:       #64748b;
+  --text-on-accent: #ffffff;
+
+  --accent:        #0284c7;
+  --accent-hover:  #0369a1;
+  --accent-active: #075985;
+  --accent-glow:   rgba(2, 132, 199, 0.12);
+  --accent-ring:   rgba(2, 132, 199, 0.22);
+
+  --success-fill: #dcfce7;  --success-fg: #166534;
+  --warning-fill: #fef3c7;  --warning-fg: #92400e;
+  --danger-fill:  #fee2e2;  --danger-fg:  #991b1b;
+  --neutral-fill: #f1f5f9;  --neutral-fg: #475569;
+  --info-fill:    #dbeafe;  --info-fg:    #1d4ed8;
+
+  --chart-1: #0284c7;
+  --chart-2: #4f46e5;
+  --chart-3: #16a34a;
+  --chart-4: #d97706;
+  --chart-5: #dc2626;
+  --chart-6: #64748b;
+
+  --shadow-xs: 0 1px 0 rgba(15, 23, 42, .04);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .05);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, .08);
+  --shadow-lg: 0 16px 32px rgba(15, 23, 42, .12);
+}

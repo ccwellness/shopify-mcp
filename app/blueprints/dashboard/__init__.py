@@ -15,6 +15,10 @@ bp = Blueprint(
     __name__,
     template_folder="templates",
     static_folder="static",
+    # Explicit url path so it doesn't collide with Flask's app-level /static
+    # (the dashboard blueprint is mounted at root, so the default endpoint
+    # would conflict).
+    static_url_path="/dashboard-static",
 )
 
 from app.blueprints.dashboard import views  # noqa: E402, F401 — registers routes

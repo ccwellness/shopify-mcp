@@ -1,20 +1,36 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="auto">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Login — Shopify Connector</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css">
+  <title>Sign in — Shopify Connector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="{{ url_for('dashboard.static', filename='css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('dashboard.static', filename='css/ensemble.css') }}">
   <style>
-    main { max-width: 32rem; margin: 4rem auto; }
-    .warning { background: var(--pico-form-element-invalid-border-color); padding: 0.5rem 1rem; border-radius: 0.25rem; }
-    .muted { color: var(--pico-muted-color); }
+    main.login {
+      max-width: 28rem;
+      margin: 0 auto;
+      padding: var(--sp-6);
+    }
+    main.login form {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: var(--sp-6);
+    }
+    main.login button { width: 100%; margin-top: var(--sp-4); }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Sign in</h1>
-    <p class="muted">Paste an API bearer token. Mint one via the CLI: <code>flask api mint-token --name=&lt;you&gt;</code></p>
+  <main class="login">
+    <div class="ensemble-hero">
+      <div class="ensemble-wordmark">shopify connector</div>
+      <div class="ensemble-underbar"></div>
+      <div class="ensemble-tagline">Multi-store Operations Platform</div>
+    </div>
 
     {% if errors %}
       <div class="warning">
@@ -34,8 +50,8 @@
       <button type="submit">Sign in</button>
     </form>
 
-    <footer>
-      <small class="muted">Same tokens that authenticate the REST + GraphQL API.</small>
+    <footer style="text-align: center; margin-top: var(--sp-5);">
+      <small>Mint a token via the CLI: <code>flask api mint-token --name=&lt;you&gt;</code></small>
     </footer>
   </main>
 </body>

@@ -9,8 +9,8 @@
     <h1>{{ order.name }}</h1>
     <p>
       Store {{ order.store_id }} ·
-      {% if order.financial_status %}<span class="pill">{{ order.financial_status.value }}</span>{% endif %}
-      {% if order.fulfillment_status %}<span class="pill">{{ order.fulfillment_status.value }}</span>{% endif %}
+      {% if order.financial_status %}<span class="pill" data-status="{{ order.financial_status.value }}">{{ order.financial_status.value }}</span>{% endif %}
+      {% if order.fulfillment_status %}<span class="pill" data-status="{{ order.fulfillment_status.value }}">{{ order.fulfillment_status.value }}</span>{% endif %}
       {% if order.processed_at %} · processed {{ order.processed_at.isoformat() }}{% endif %}
     </p>
   </hgroup>
@@ -63,7 +63,7 @@
               <td class="num">{{ li.quantity }}</td>
               <td class="num">{{ li.price }}</td>
               <td class="num">{{ li.total_discount }}</td>
-              <td>{% if li.fulfillment_status %}<span class="pill">{{ li.fulfillment_status.value }}</span>{% else %}—{% endif %}</td>
+              <td>{% if li.fulfillment_status %}<span class="pill" data-status="{{ li.fulfillment_status.value }}">{{ li.fulfillment_status.value }}</span>{% else %}—{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -107,8 +107,8 @@
         <tbody>
           {% for f in order.fulfillments %}
             <tr>
-              <td><span class="pill">{{ f.status.value }}</span></td>
-              <td>{% if f.shipment_status %}<span class="pill">{{ f.shipment_status.value }}</span>{% else %}—{% endif %}</td>
+              <td><span class="pill" data-status="{{ f.status.value }}">{{ f.status.value }}</span></td>
+              <td>{% if f.shipment_status %}<span class="pill" data-status="{{ f.shipment_status.value }}">{{ f.shipment_status.value }}</span>{% else %}—{% endif %}</td>
               <td>{{ f.tracking_company or '—' }}</td>
               <td>
                 {% if f.tracking_url and f.tracking_number %}

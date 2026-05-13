@@ -56,7 +56,7 @@
               <td>{{ row.currency_code or '—' }}</td>
               <td>
                 {% for status, count in row.status_counts.items() %}
-                  <span class="pill">{{ status.value }}: {{ count }}</span>
+                  <span class="pill" data-status="{{ status.value }}">{{ status.value }}: {{ count }}</span>
                 {% endfor %}
               </td>
             </tr>

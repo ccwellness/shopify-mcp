@@ -12,7 +12,7 @@
           <span class="muted">(unmatched)</span>
         {% endif %}
       </td>
-      <td><span class="pill">{{ c.status.value }}</span></td>
+      <td><span class="pill" data-status="{{ c.status.value }}">{{ c.status.value }}</span></td>
       <td>
         {% if c.frequency_count and c.frequency_interval %}
           every {{ c.frequency_count }} {{ c.frequency_interval }}{% if c.frequency_count != 1 %}s{% endif %}

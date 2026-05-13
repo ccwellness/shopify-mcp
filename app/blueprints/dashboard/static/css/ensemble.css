@@ -1,0 +1,476 @@
+/* ============================================================
+   Ensemble component styles — adapted for plain-HTML Jinja templates.
+
+   The dashboard is server-rendered semantic HTML (no Bootstrap, no
+   utility framework). This file styles the bare elements (<h1>,
+   <table>, <button>, <input>, <select>) plus the small set of class
+   names the templates already use: .pill, .num, .muted, .warning,
+   .grid-3, .filters, .compact.
+   ============================================================ */
+
+/* -- Base ---------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { background: var(--bg-deep); }
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+h1 { font-size: var(--fs-32); font-weight: 800; margin-bottom: var(--sp-4); }
+h2 { font-size: var(--fs-24); margin-bottom: var(--sp-3); }
+h3 { font-size: var(--fs-18); margin-bottom: var(--sp-3); margin-top: var(--sp-6); }
+h4 { font-size: var(--fs-15); }
+
+p { margin: 0 0 var(--sp-3); }
+hr { border: 0; height: 1px; background: var(--border); margin: var(--sp-6) 0; }
+
+code, kbd, .tabular, .num {
+  font-family: var(--font-mono);
+  font-feature-settings: 'zero';
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+a:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); border-radius: 4px; }
+::selection { background: var(--accent-glow); color: var(--text-primary); }
+
+/* -- Layout chrome ------------------------------------------ */
+header {
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--sp-6);
+}
+nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  gap: var(--sp-6);
+}
+nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+nav ul li a {
+  color: var(--text-secondary);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  transition: background .15s ease, color .15s ease;
+}
+nav ul li a:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+  text-decoration: none;
+}
+nav ul li a[aria-current="page"] {
+  color: var(--accent);
+  background: var(--row-hover);
+  font-weight: 600;
+}
+nav ul li.muted small { color: var(--text-dim); }
+main {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--sp-6);
+}
+footer {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--sp-6);
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+
+/* -- Ensemble wordmark in nav ------------------------------- */
+.ensemble-wordmark-sm {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--fs-17);
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+.ensemble-wordmark-sm:hover { color: var(--text-primary); text-decoration: none; }
+
+/* Hero treatment for login / splash */
+.ensemble-hero {
+  text-align: center;
+  margin: var(--sp-16) 0 var(--sp-10);
+  animation: hero-rise .8s ease-out;
+}
+.ensemble-wordmark {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(48px, 7vw, 80px);
+  line-height: 1;
+  letter-spacing: -0.5px;
+  color: var(--wordmark);
+}
+.ensemble-underbar {
+  width: 40px;
+  height: 3px;
+  margin: 6px auto 0;
+  border-radius: 999px;
+  background: var(--wordmark);
+  opacity: 0.4;
+}
+.ensemble-tagline {
+  font-family: var(--font-heading);
+  font-weight: 300;
+  font-size: var(--fs-15);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  margin-top: var(--sp-5);
+}
+@keyframes hero-rise {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* -- Buttons (style bare <button> and submit inputs) -------- */
+button,
+input[type="submit"],
+input[type="button"],
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--fs-13);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, opacity .15s ease;
+}
+button:hover,
+input[type="submit"]:hover,
+input[type="button"]:hover,
+.btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+button:focus-visible,
+input[type="submit"]:focus-visible,
+input[type="button"]:focus-visible,
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+button:disabled, .btn:disabled { opacity: 0.6; cursor: not-allowed; pointer-events: none; }
+
+button.secondary, .btn.secondary, input[type="submit"].secondary {
+  background: var(--border);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+button.secondary:hover, .btn.secondary:hover { background: var(--border-hover); }
+
+button.outline, .btn.outline {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+button.outline:hover, .btn.outline:hover { background: var(--accent-glow); }
+
+button.ghost, .btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+button.ghost:hover, .btn.ghost:hover { background: var(--bg-card); color: var(--text-primary); }
+
+button.danger, .btn.danger {
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
+  color: var(--danger-fg);
+}
+button.danger:hover, .btn.danger:hover { filter: brightness(1.15); }
+
+/* -- Inputs / Selects / Textareas --------------------------- */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+input[type="date"],
+input[type="datetime-local"],
+select,
+textarea,
+.input, .select, .textarea {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--sp-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color .15s, box-shadow .15s, background .15s;
+  outline: none;
+}
+input::placeholder, textarea::placeholder { color: var(--text-dim); }
+input:hover, select:hover, textarea:hover { border-color: var(--border-hover); }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+input:disabled, select:disabled, textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+textarea { height: auto; padding: 10px var(--sp-3); min-height: 96px; resize: vertical; }
+
+select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1.5l5 5 5-5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+label {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+label input, label select, label textarea {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: normal;
+  margin-top: 6px;
+  color: var(--text-primary);
+}
+
+/* -- Filter bar (existing `form.filters` markup) ------------ */
+form.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  align-items: end;
+  margin-bottom: var(--sp-5);
+  padding: var(--sp-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+form.filters > * { min-width: 9rem; }
+form.filters button { align-self: end; }
+
+/* -- Tables (bare <table> and table.compact) --------------- */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-13);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: var(--sp-5);
+}
+table thead th {
+  text-align: left;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: var(--fs-11);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 12px var(--sp-4);
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table tbody td {
+  padding: 14px var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+table tbody tr:last-child td { border-bottom: 0; }
+table tbody tr:hover td { background: var(--row-hover); }
+table tfoot th, table tfoot td {
+  padding: 12px var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+}
+table.compact thead th { padding: 8px var(--sp-3); }
+table.compact tbody td { padding: 10px var(--sp-3); }
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+th.num { text-align: right; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* -- Pills / badges ----------------------------------------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--neutral-fill);
+  color: var(--neutral-fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.pill.success { background: var(--success-fill); color: var(--success-fg); }
+.pill.warning { background: var(--warning-fill); color: var(--warning-fg); }
+.pill.danger  { background: var(--danger-fill);  color: var(--danger-fg); }
+.pill.info    { background: var(--info-fill);    color: var(--info-fg); }
+.pill.accent  { background: var(--accent-glow);  color: var(--accent); border-color: rgba(14,165,233,.35); }
+
+/* Auto-coloring for common status values — keeps templates simple
+   when we don't have a Jinja macro for status → class mapping. */
+.pill[data-status="active"],
+.pill[data-status="paid"],
+.pill[data-status="fulfilled"],
+.pill[data-status="success"] { background: var(--success-fill); color: var(--success-fg); }
+.pill[data-status="paused"],
+.pill[data-status="pending"],
+.pill[data-status="partially_fulfilled"],
+.pill[data-status="warning"] { background: var(--warning-fill); color: var(--warning-fg); }
+.pill[data-status="cancelled"],
+.pill[data-status="refunded"],
+.pill[data-status="voided"],
+.pill[data-status="failed"],
+.pill[data-status="danger"] { background: var(--danger-fill);  color: var(--danger-fg); }
+.pill[data-status="archived"],
+.pill[data-status="draft"],
+.pill[data-status="unfulfilled"] { background: var(--neutral-fill); color: var(--neutral-fg); }
+
+/* -- Inline warning / alert callout ------------------------ */
+.warning {
+  background: var(--danger-fill);
+  color: var(--danger-fg);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--danger-fill);
+  border-left: 3px solid var(--danger-fg);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-4);
+}
+.warning p { margin: 0; color: inherit; }
+
+/* -- Text utilities ----------------------------------------- */
+.muted { color: var(--text-dim); }
+.muted small { color: inherit; }
+small { font-size: var(--fs-12); color: var(--text-dim); }
+
+/* -- Home cards layout -------------------------------------- */
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+}
+article {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+article header {
+  background: transparent;
+  border-bottom: 0;
+  padding: 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--fs-15);
+  color: var(--text-primary);
+  height: auto;
+}
+article p { color: var(--text-secondary); flex: 1; }
+article a[role="button"] {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 500;
+}
+article a[role="button"]:hover { background: var(--accent-hover); text-decoration: none; }
+
+/* -- Sections inside detail pages --------------------------- */
+section { margin: var(--sp-6) 0; }
+section h3 { color: var(--text-secondary); }
+hgroup p { color: var(--text-secondary); margin-top: var(--sp-1); }
+
+address {
+  font-style: normal;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+
+/* -- Scrollbar (WebKit only) -------------------------------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }

@@ -9,7 +9,7 @@
     <h1>{{ product.title }}</h1>
     <p>
       Store {{ product.store_id }} ·
-      <span class="pill">{{ product.status.value }}</span>
+      <span class="pill" data-status="{{ product.status.value }}">{{ product.status.value }}</span>
       {% if product.product_type %}<span class="pill">{{ product.product_type }}</span>{% endif %}
       {% if product.vendor %} · vendor: {{ product.vendor }}{% endif %}
       · handle: <code>{{ product.handle }}</code>
@@ -175,7 +175,7 @@
             <tr>
               <td><strong><a href="{{ url_for('dashboard.order_detail', order_id=r.order.id) }}">{{ r.order.name }}</a></strong></td>
               <td>{{ r.order.processed_at.isoformat() if r.order.processed_at else '—' }}</td>
-              <td>{% if r.order.financial_status %}<span class="pill">{{ r.order.financial_status.value }}</span>{% endif %}</td>
+              <td>{% if r.order.financial_status %}<span class="pill" data-status="{{ r.order.financial_status.value }}">{{ r.order.financial_status.value }}</span>{% endif %}</td>
               <td class="num">{{ r.order.total_price }} {{ r.order.currency_code }}</td>
               <td class="num">{{ r.units_of_product }}</td>
               <td>{{ r.skus_of_product|join(', ') if r.skus_of_product else '—' }}</td>
