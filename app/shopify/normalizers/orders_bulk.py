@@ -161,6 +161,25 @@ def _normalize_customer(store_id: StoreId, payload: dict[str, Any]) -> Customer:
 # ---------------------------------------------------------------------------
 
 
+def _sum_discount_allocations(allocations: Any) -> Decimal:
+    """Sum the `allocatedAmountSet.shopMoney.amount` over all order-level
+    discount allocations attached to this line item.
+
+    Shopify reports per-line-item discounts in `totalDiscountSet` and
+    order-level discounts (e.g., a coupon or a manual cart discount on a
+    draft order) in `discountAllocations`. They are disjoint, so the
+    line item's true discount is the sum of both.
+    """
+    if not isinstance(allocations, list):
+        return Decimal("0")
+    total = Decimal("0")
+    for alloc in allocations:
+        if not isinstance(alloc, dict):
+            continue
+        total += _shop_money(alloc.get("allocatedAmountSet"))
+    return total
+
+
 def _normalize_line_item(
     store_id: StoreId,
     payload: dict[str, Any],
@@ -174,6 +193,9 @@ def _normalize_line_item(
     product_gid = product.get("id") if isinstance(product, dict) else None
     variant_id = variants_by_gid.get(str(variant_gid)) if variant_gid else None
     product_id = products_by_gid.get(str(product_gid)) if product_gid else None
+    line_discount = _shop_money(payload.get("totalDiscountSet")) + _sum_discount_allocations(
+        payload.get("discountAllocations")
+    )
     return OrderLineItem(
         id=OrderLineItemId(0),
         order_id=OrderId(0),
@@ -187,7 +209,7 @@ def _normalize_line_item(
         vendor=payload.get("vendor"),
         quantity=int(payload.get("quantity") or 1),
         price=_shop_money(payload.get("originalUnitPriceSet")),
-        total_discount=_shop_money(payload.get("totalDiscountSet")),
+        total_discount=line_discount,
         fulfillment_status=_line_fulfillment_status(payload.get("fulfillmentStatus")),
         requires_shipping=bool(payload.get("requiresShipping", True)),
         taxable=bool(payload.get("taxable", True)),
@@ -283,6 +305,7 @@ def normalize_order_bulk(
         total_tax=_shop_money(payload.get("totalTaxSet")),
         total_discounts=_shop_money(payload.get("totalDiscountsSet")),
         total_shipping=_shop_money(payload.get("totalShippingPriceSet")),
+        source_name=payload.get("sourceName"),
         presentment_subtotal_price=_presentment_money(payload.get("subtotalPriceSet")),
         presentment_total_price=_presentment_money(payload.get("totalPriceSet")),
         processed_at=_required_ts(

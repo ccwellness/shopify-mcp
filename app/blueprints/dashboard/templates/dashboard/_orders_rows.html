@@ -2,7 +2,10 @@
   {% for o in page.items %}
     <tr>
       <td>{{ o.store_id }}</td>
-      <td><strong><a href="{{ url_for('dashboard.order_detail', order_id=o.id) }}">{{ o.name }}</a></strong></td>
+      <td>
+        <strong><a href="{{ url_for('dashboard.order_detail', order_id=o.id) }}">{{ o.name }}</a></strong>
+        {% if o.source_name == 'shopify_draft_order' %} <span class="pill draft" title="Created from the Shopify admin as a draft order">draft</span>{% endif %}
+      </td>
       <td>{{ o.processed_at | datetime_pt }}</td>
       <td>
         {% if o.financial_status %}<span class="pill" data-status="{{ o.financial_status.value }}">{{ o.financial_status.value }}</span>{% endif %}

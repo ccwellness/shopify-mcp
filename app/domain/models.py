@@ -283,6 +283,7 @@ class Order:
     closed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    source_name: str | None = None  # Shopify `sourceName` — web, shopify_draft_order, pos, ...
     line_items: tuple[OrderLineItem, ...] = field(default_factory=tuple)
     shipping_address: OrderShippingAddress | None = None
     fulfillments: tuple[Fulfillment, ...] = field(default_factory=tuple)

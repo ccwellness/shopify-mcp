@@ -139,7 +139,23 @@ def _normalize_customer(store_id: StoreId, payload: dict[str, Any]) -> Customer:
 # ---------------------------------------------------------------------------
 
 
+def _sum_webhook_discount_allocations(allocations: Any) -> Decimal:
+    """REST shape — sum `discount_allocations[].amount` (order-level discounts
+    allocated to this line item). Disjoint from `total_discount` per Shopify's
+    payload contract; the line item's true total discount is the sum."""
+    if not isinstance(allocations, list):
+        return Decimal("0")
+    total = Decimal("0")
+    for alloc in allocations:
+        if isinstance(alloc, dict):
+            total += _money(alloc.get("amount"))
+    return total
+
+
 def _normalize_line_item(store_id: StoreId, payload: dict[str, Any]) -> OrderLineItem:
+    line_discount = _money(payload.get("total_discount")) + _sum_webhook_discount_allocations(
+        payload.get("discount_allocations")
+    )
     return OrderLineItem(
         id=OrderLineItemId(0),
         order_id=OrderId(0),  # filled by ORM relationship cascade
@@ -153,7 +169,7 @@ def _normalize_line_item(store_id: StoreId, payload: dict[str, Any]) -> OrderLin
         vendor=payload.get("vendor"),
         quantity=int(payload.get("quantity") or 1),
         price=_money(payload.get("price")),
-        total_discount=_money(payload.get("total_discount")),
+        total_discount=line_discount,
         fulfillment_status=(
             OrderLineFulfillmentStatus(payload["fulfillment_status"])
             if payload.get("fulfillment_status")
@@ -264,6 +280,7 @@ def normalize_order_webhook(store_id: StoreId, payload: dict[str, Any]) -> Norma
         total_tax=_money(payload.get("total_tax")),
         total_discounts=_money(payload.get("total_discounts")),
         total_shipping=_shop_money(payload.get("total_shipping_price_set")),
+        source_name=payload.get("source_name"),
         presentment_subtotal_price=_presentment_money(payload.get("subtotal_price_set")),
         presentment_total_price=_presentment_money(payload.get("total_price_set")),
         processed_at=_required_ts(

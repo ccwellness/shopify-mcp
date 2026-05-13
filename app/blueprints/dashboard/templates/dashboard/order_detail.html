@@ -6,7 +6,10 @@
   <p><a href="{{ url_for('dashboard.orders') }}">← All orders</a></p>
 
   <hgroup>
-    <h1>{{ order.name }}</h1>
+    <h1>
+      {{ order.name }}
+      {% if order.source_name == 'shopify_draft_order' %}<span class="pill draft" title="Created from the Shopify admin as a draft order">draft</span>{% endif %}
+    </h1>
     <p>
       Store {{ order.store_id }} ·
       {% if order.financial_status %}<span class="pill" data-status="{{ order.financial_status.value }}">{{ order.financial_status.value }}</span>{% endif %}
@@ -21,6 +24,7 @@
       <tbody>
         <tr><th>Order GID</th><td><code>{{ order.gid or '—' }}</code></td></tr>
         <tr><th>Legacy id</th><td>{{ order.legacy_id or '—' }}</td></tr>
+        <tr><th>Source</th><td>{{ order.source_name or '—' }}</td></tr>
         <tr><th>Email</th><td>{{ order.email or '—' }}</td></tr>
         <tr>
           <th>Customer</th>

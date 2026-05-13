@@ -376,6 +376,15 @@ code {
 .pill.danger  { background: var(--danger-fill);  color: var(--danger-fg); }
 .pill.info    { background: var(--info-fill);    color: var(--info-fg); }
 .pill.accent  { background: var(--accent-glow);  color: var(--accent); border-color: rgba(14,165,233,.35); }
+/* Draft / staff-created orders — call out manual-entry origin in amber.
+   Used on order list rows and order detail headers when source_name is
+   "shopify_draft_order". */
+.pill.draft {
+  background: var(--warning-fill);
+  color: var(--warning-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
 /* Auto-coloring for common status values — keeps templates simple
    when we don't have a Jinja macro for status → class mapping. */

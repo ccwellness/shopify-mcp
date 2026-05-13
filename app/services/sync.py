@@ -57,6 +57,7 @@ _ORDER_BULK_QUERY_TEMPLATE = """
         closedAt
         currencyCode
         presentmentCurrencyCode
+        sourceName
         displayFinancialStatus
         displayFulfillmentStatus
         subtotalPriceSet {{ shopMoney {{ amount }} presentmentMoney {{ amount }} }}
@@ -103,6 +104,9 @@ _ORDER_BULK_QUERY_TEMPLATE = """
               product {{ id }}
               originalUnitPriceSet {{ shopMoney {{ amount }} }}
               totalDiscountSet {{ shopMoney {{ amount }} }}
+              discountAllocations {{
+                allocatedAmountSet {{ shopMoney {{ amount }} }}
+              }}
               requiresShipping
               taxable
             }}

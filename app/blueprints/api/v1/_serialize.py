@@ -238,6 +238,7 @@ def order_to_json(order: Order) -> dict[str, Any]:
         "total_tax": _money(order.total_tax),
         "total_discounts": _money(order.total_discounts),
         "total_shipping": _money(order.total_shipping),
+        "source_name": order.source_name,
         "presentment_subtotal_price": _money(order.presentment_subtotal_price),
         "presentment_total_price": _money(order.presentment_total_price),
         "processed_at": _dt(order.processed_at),

@@ -59,6 +59,9 @@ class OrderRow(Base):
     total_shipping: Mapped[Decimal] = mapped_column(
         Numeric(19, 4), nullable=False, default=Decimal("0")
     )
+    # Shopify `sourceName` — `web`, `shopify_draft_order`, `pos`, `mobile_app`,
+    # `shopify_io`, etc. Lets the dashboard flag draft / staff-created orders.
+    source_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     presentment_subtotal_price: Mapped[Decimal | None] = mapped_column(
         Numeric(19, 4), nullable=True
     )

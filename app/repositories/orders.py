@@ -135,6 +135,7 @@ def _row_to_domain(row: OrderRow) -> Order:
         total_tax=row.total_tax,
         total_discounts=row.total_discounts,
         total_shipping=row.total_shipping,
+        source_name=row.source_name,
         presentment_subtotal_price=row.presentment_subtotal_price,
         presentment_total_price=row.presentment_total_price,
         processed_at=row.processed_at,
@@ -460,6 +461,7 @@ class SqlAlchemyOrderRepository:
                 total_tax=order.total_tax,
                 total_discounts=order.total_discounts,
                 total_shipping=order.total_shipping,
+                source_name=order.source_name,
                 presentment_subtotal_price=order.presentment_subtotal_price,
                 presentment_total_price=order.presentment_total_price,
                 processed_at=order.processed_at,
@@ -492,6 +494,7 @@ class SqlAlchemyOrderRepository:
             existing.total_tax = order.total_tax
             existing.total_discounts = order.total_discounts
             existing.total_shipping = order.total_shipping
+            existing.source_name = order.source_name
             existing.presentment_subtotal_price = order.presentment_subtotal_price
             existing.presentment_total_price = order.presentment_total_price
             existing.processed_at = order.processed_at
