@@ -8,12 +8,12 @@
 
   <form method="get" action="{{ url_for('dashboard.orders') }}" class="filters">
     <label>
-      Since
-      <input type="text" name="since" value="{{ since_raw }}" placeholder="2026-05-01T00:00:00Z">
+      From
+      <input type="date" name="since" value="{{ since_raw }}">
     </label>
     <label>
-      Until
-      <input type="text" name="until" value="{{ until_raw }}" placeholder="2026-05-11T00:00:00Z">
+      Through
+      <input type="date" name="until" value="{{ until_raw }}">
     </label>
     <label>
       Store id

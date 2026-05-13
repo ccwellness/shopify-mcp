@@ -337,10 +337,10 @@ def _render_orders(*, partial: bool) -> str:
     cursor = request.args.get("cursor") or None
 
     errors: list[str] = []
-    since, err = _parse_optional_dt(since_raw)
+    since_date, err = _parse_optional_date(since_raw)
     if err:
         errors.append(err)
-    until, err = _parse_optional_dt(until_raw)
+    until_date, err = _parse_optional_date(until_raw)
     if err:
         errors.append(err)
     store_ids, err = _parse_store_ids(store_id_raw)
@@ -354,12 +354,27 @@ def _render_orders(*, partial: bool) -> str:
         except ValueError:
             errors.append(f"financial_status invalid: {status_raw!r}")
 
+    # User picks PT calendar dates; convert to half-open UTC datetime
+    # window with the until-date inclusive (until → next PT midnight).
+    since_dt = (
+        datetime.combine(since_date, datetime.min.time(), tzinfo=_PT).astimezone(UTC)
+        if since_date is not None
+        else None
+    )
+    until_dt = (
+        datetime.combine(
+            until_date + timedelta(days=1), datetime.min.time(), tzinfo=_PT
+        ).astimezone(UTC)
+        if until_date is not None
+        else None
+    )
+
     page = None
     if not errors:
         spec = OrderSpec(
             store_ids=store_ids,
-            since=since,
-            until=until,
+            since=since_dt,
+            until=until_dt,
             financial_status=financial_status,
             sku=sku_raw or None,
         )
