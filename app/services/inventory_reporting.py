@@ -51,3 +51,26 @@ class InventoryReportingService:
         )
         with self._uow_factory() as uow:
             return uow.inventory.list_levels(spec, limit=_clamp_limit(limit), cursor=cursor)
+
+    def list_levels(  # noqa: PLR0913 — kwargs-only; spec + paging are independent inputs
+        self,
+        *,
+        store_ids: tuple[StoreId, ...] | None = None,
+        location_id: LocationId | None = None,
+        sku: str | None = None,
+        limit: int = DEFAULT_LIMIT,
+        cursor: str | None = None,
+    ) -> Page[InventoryLevel]:
+        """All inventory levels matching the filter — no threshold gate.
+
+        Companion to `list_low_stock` for "what do we have on hand" rather
+        than "what's running out." Same paging contract.
+        """
+        spec = InventorySpec(
+            store_ids=store_ids,
+            location_id=location_id,
+            sku=sku,
+            low_stock_threshold=None,
+        )
+        with self._uow_factory() as uow:
+            return uow.inventory.list_levels(spec, limit=_clamp_limit(limit), cursor=cursor)

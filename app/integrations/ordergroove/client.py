@@ -24,6 +24,7 @@ DEFAULT_BASE_URL = "https://restapi.ordergroove.com"
 _SUBSCRIPTIONS_PATH = "/subscriptions/"
 _HTTP_UNAUTHORIZED = 401
 _HTTP_FORBIDDEN = 403
+_HTTP_NOT_FOUND = 404
 
 
 class OrderGrooveError(RuntimeError):
@@ -63,20 +64,58 @@ class OrderGrooveClient:
         `SubscriptionContract` is the provider's job.
         """
         url: str | None = f"{self._base_url}{_SUBSCRIPTIONS_PATH}?page_size={page_size}"
-        headers = {"x-api-key": self._api_key, "Accept": "application/json"}
         with httpx.Client(timeout=self._timeout) as client:
             while url is not None:
-                resp = client.get(url, headers=headers)
-                _raise_for_status(resp)
-                body = resp.json()
-                if not isinstance(body, dict) or "results" not in body:
-                    shape = sorted(body.keys()) if isinstance(body, dict) else type(body).__name__
-                    raise OrderGrooveError(f"unexpected response shape from {url!r}: keys={shape}")
-                for record in body["results"]:
-                    if isinstance(record, dict):
-                        yield record
-                next_url = body.get("next")
-                url = next_url if isinstance(next_url, str) and next_url else None
+                results, url = self._fetch_page(client, url)
+                yield from results
+
+    def list_subscriptions_page(
+        self,
+        *,
+        page_size: int = 100,
+        start_url: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """Return one page of subscriptions plus the `next` URL (or None).
+
+        `start_url` is the opaque cursor returned from a prior call. When
+        None, the walk begins from the first page. Built for callers that
+        want explicit pagination (e.g. an MCP tool that returns one page
+        per invocation) rather than an iterator.
+        """
+        url = start_url or f"{self._base_url}{_SUBSCRIPTIONS_PATH}?page_size={page_size}"
+        with httpx.Client(timeout=self._timeout) as client:
+            return self._fetch_page(client, url)
+
+    def get_subscription(self, public_id: str) -> dict[str, Any] | None:
+        """Fetch one subscription by its OG public_id, or None if 404."""
+        if not public_id:
+            raise OrderGrooveError("public_id is required")
+        url = f"{self._base_url}{_SUBSCRIPTIONS_PATH}{public_id}/"
+        headers = {"x-api-key": self._api_key, "Accept": "application/json"}
+        with httpx.Client(timeout=self._timeout) as client:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == _HTTP_NOT_FOUND:
+                return None
+            _raise_for_status(resp)
+            body = resp.json()
+            if not isinstance(body, dict):
+                raise OrderGrooveError(f"unexpected response from {url!r}: {type(body).__name__}")
+            return body
+
+    def _fetch_page(
+        self, client: httpx.Client, url: str
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        headers = {"x-api-key": self._api_key, "Accept": "application/json"}
+        resp = client.get(url, headers=headers)
+        _raise_for_status(resp)
+        body = resp.json()
+        if not isinstance(body, dict) or "results" not in body:
+            shape = sorted(body.keys()) if isinstance(body, dict) else type(body).__name__
+            raise OrderGrooveError(f"unexpected response shape from {url!r}: keys={shape}")
+        results = [r for r in body["results"] if isinstance(r, dict)]
+        next_url = body.get("next")
+        next_url = next_url if isinstance(next_url, str) and next_url else None
+        return results, next_url
 
 
 def _raise_for_status(resp: httpx.Response) -> None:

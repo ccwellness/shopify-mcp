@@ -7,6 +7,26 @@ just imports this package and then calls `mcp.run_*`.
 
 from __future__ import annotations
 
-from mcp_server.tools import analytics, compare, inventory, orders, stores
+from mcp_server.tools import (
+    analytics,
+    compare,
+    inventory,
+    live_ordergroove,
+    live_shopify,
+    orders,
+    products,
+    stores,
+    subscriptions,
+)
 
-__all__ = ["analytics", "compare", "inventory", "orders", "stores"]
+__all__ = [
+    "analytics",
+    "compare",
+    "inventory",
+    "live_ordergroove",
+    "live_shopify",
+    "orders",
+    "products",
+    "stores",
+    "subscriptions",
+]

@@ -18,8 +18,13 @@ from app.services.audit import AuditService
 from app.services.auth import AuthService
 from app.services.inventory_reporting import InventoryReportingService
 from app.services.order_query import OrderQueryService
+from app.services.product_query import ProductQueryService
 from app.services.store_compare import StoreComparisonService
 from app.services.store_query import StoreQueryService
+from app.services.subscription_query import SubscriptionQueryService
+from app.services.sync import SyncService
+from app.shopify.client import ShopifyClient
+from app.shopify.config import StoreConfig
 
 mcp = FastMCP("shopify-multistore")
 
@@ -35,6 +40,11 @@ class _Services:
     inventory: InventoryReportingService
     analytics: AnalyticsService
     compare: StoreComparisonService
+    subscriptions: SubscriptionQueryService
+    products: ProductQueryService
+    sync: SyncService
+    shopify: ShopifyClient
+    store_configs: dict[str, StoreConfig]
 
 
 _container_singleton: Container | None = None
@@ -64,4 +74,9 @@ def services() -> _Services:
         inventory=c.inventory_reporting_service(),
         analytics=c.analytics_service(),
         compare=c.store_comparison_service(),
+        subscriptions=c.subscription_query_service(),
+        products=c.product_query_service(),
+        sync=c.sync_service(),
+        shopify=c.shopify_client(),
+        store_configs=c.store_configs(),
     )

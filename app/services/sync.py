@@ -133,6 +133,56 @@ query OrderRefunds($id: ID!) {
 }
 """
 
+# Mirrors the bulk-orders selection set verbatim for one order. Kept inline
+# rather than templated so the line-by-line shape matches the bulk query —
+# any change must be applied to both.
+_SINGLE_ORDER_QUERY = """
+query SingleOrder($id: ID!) {
+  order(id: $id) {
+    id
+    legacyResourceId
+    name
+    email
+    phone
+    processedAt
+    createdAt
+    updatedAt
+    cancelledAt
+    closedAt
+    currencyCode
+    presentmentCurrencyCode
+    sourceName
+    displayFinancialStatus
+    displayFulfillmentStatus
+    subtotalPriceSet { shopMoney { amount } presentmentMoney { amount } }
+    totalPriceSet { shopMoney { amount } presentmentMoney { amount } }
+    totalTaxSet { shopMoney { amount } }
+    totalDiscountsSet { shopMoney { amount } }
+    totalShippingPriceSet { shopMoney { amount } }
+    customer {
+      id legacyResourceId email phone firstName lastName createdAt updatedAt
+      numberOfOrders amountSpent { amount currencyCode }
+    }
+    shippingAddress {
+      name firstName lastName company address1 address2 city province country
+      zip phone latitude longitude
+    }
+    lineItems(first: 250) {
+      edges {
+        node {
+          id title sku vendor quantity
+          variant { id } product { id }
+          originalUnitPriceSet { shopMoney { amount } }
+          totalDiscountSet { shopMoney { amount } }
+          discountAllocations { allocatedAmountSet { shopMoney { amount } } }
+          requiresShipping taxable
+        }
+      }
+    }
+  }
+}
+"""
+
 
 _CUSTOMER_BULK_QUERY_TEMPLATE = """
 {{
@@ -323,6 +373,54 @@ class SyncService:
 
         self._mark_sync_complete(store_id, SyncResource.ORDERS)
         return SyncResult(store_key=store_key, resource=SyncResource.ORDERS, upserted=count)
+
+    # -----------------------------------------------------------------------
+    # Single-order refresh (point GraphQL, not bulk)
+    # -----------------------------------------------------------------------
+
+    def refresh_order(self, store_key: str, order_gid: str) -> SyncResult:
+        """Re-fetch one order from Shopify by GID and upsert.
+
+        Used by the MCP `refresh_order` tool and any "the data looks stale,
+        pull it again" workflow. Does NOT mark the store-wide ORDERS
+        sync_state — that's only for full re-syncs.
+        """
+        cfg = self._configs[store_key]
+        store_id = self._resolve_store_id(cfg)
+
+        data = self._client.query(store_key, _SINGLE_ORDER_QUERY, {"id": order_gid})
+        payload = data.get("order")
+        if not payload:
+            raise ValueError(f"order not found on {store_key!r}: {order_gid!r}")
+
+        # Flatten the lineItems connection to the bulk-shape the normalizer expects.
+        line_edges = (payload.get("lineItems") or {}).get("edges") or []
+        payload["line_items"] = [edge["node"] for edge in line_edges if edge.get("node")]
+        payload.pop("lineItems", None)
+
+        with self._uow_factory() as uow:
+            variants_by_gid = uow.products.variant_gid_map(store_id)
+            products_by_gid = uow.products.product_gid_map(store_id)
+
+        normalized = normalize_order_bulk(
+            store_id,
+            payload,
+            variants_by_gid=variants_by_gid,
+            products_by_gid=products_by_gid,
+        )
+
+        with self._uow_factory() as uow:
+            customer_id = None
+            if normalized.customer is not None:
+                uow.customers.upsert(normalized.customer)
+                cust = uow.customers.get_by_gid(store_id, normalized.customer.gid)
+                if cust is not None:
+                    customer_id = cust.id
+            order = dataclasses.replace(normalized.order, customer_id=customer_id)
+            uow.orders.upsert(order)
+            uow.commit()
+
+        return SyncResult(store_key=store_key, resource=SyncResource.ORDERS, upserted=1)
 
     # -----------------------------------------------------------------------
     # Refunds (per-order GraphQL — bulk doesn't support plain list fields)

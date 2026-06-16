@@ -289,6 +289,73 @@ class Order:
     fulfillments: tuple[Fulfillment, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OrderLineRow:
+    """Denormalized one-row-per-line-item view of the order aggregate.
+
+    Built by `OrderQueryService.list_order_line_rows` for export-style
+    consumers (LLM analysis, BI tools): each row carries the order
+    context, the single line item, the shipping address, and the linked
+    customer. Orders with zero line items emit a single row with the
+    line-item fields set to None — keeps row counts reconcilable to
+    "orders touched".
+    """
+
+    # ---- Order context --------------------------------------------------
+    order_id: OrderId
+    order_name: str
+    order_number: int | None
+    order_gid: str
+    store_id: StoreId
+    processed_at: datetime
+    created_at: datetime
+    financial_status: FinancialStatus | None
+    fulfillment_status: FulfillmentStatus | None
+    currency_code: str
+    order_subtotal: Money
+    order_total: Money
+    order_total_tax: Money
+    order_total_discounts: Money
+    order_total_shipping: Money
+    source_name: str | None
+
+    # ---- Line item (all None when the order has no line items) ---------
+    line_item_id: OrderLineItemId | None
+    line_item_gid: str | None
+    line_item_title: str | None
+    sku: str | None
+    vendor: str | None
+    variant_id: VariantId | None
+    product_id: ProductId | None
+    quantity: int | None
+    unit_price: Money | None
+    line_total_discount: Money | None
+    line_extended: Money | None  # quantity * unit_price - line_total_discount
+    line_fulfillment_status: OrderLineFulfillmentStatus | None
+    requires_shipping: bool | None
+    taxable: bool | None
+
+    # ---- Shipping address (all None when the order has none) -----------
+    ship_name: str | None
+    ship_company: str | None
+    ship_address1: str | None
+    ship_address2: str | None
+    ship_city: str | None
+    ship_province: str | None
+    ship_country: str | None
+    ship_zip: str | None
+    ship_phone: str | None
+    ship_latitude: Decimal | None
+    ship_longitude: Decimal | None
+
+    # ---- Customer (customer_id None when no linked customer) -----------
+    customer_id: CustomerId | None
+    customer_email: str | None
+    customer_first_name: str | None
+    customer_last_name: str | None
+    customer_phone: str | None
+
+
 # ---------------------------------------------------------------------------
 # Subscriptions
 # ---------------------------------------------------------------------------
