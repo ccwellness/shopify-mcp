@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "shopify-connector": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "mcp_server"],
+      "type": "stdio"
+    }
+  }
+}
