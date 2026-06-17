@@ -111,7 +111,7 @@ ignore = ["S101"]  # assert is fine in tests
 "app/__init__.py" = ["TID251"]       # app factory bootstraps L1→L4 wiring (design 11A.7)
 "app/container.py" = ["TID251"]      # DI container is the canonical wiring point (when it lands)
 "scripts/**" = ["TID251"]            # dev smoke/operator scripts may inspect DB directly
-"tests/**" = ["TID251"]              # tests may import sqlalchemy + app.db for fixtures + assertions
+"tests/**" = ["TID251", "S105", "S106", "PLR2004"]  # tests: sqlalchemy/app.db fixtures, fake tokens, literal expected values
 
 # ---------------------------------------------------------------------------
 # mypy — strict on app + mcp_server, relaxed on tests.
