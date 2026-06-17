@@ -43,7 +43,14 @@ class TokenCache:
         self._lock = threading.Lock()
 
     def get(self, store: StoreConfig) -> str:
-        """Return a valid access token for `store`, refreshing if needed."""
+        """Return a valid access token for `store`, refreshing if needed.
+
+        A configured Admin API access token wins: it's returned directly and
+        no OAuth exchange happens. Stores without a token fall back to the
+        client-credentials grant.
+        """
+        if store.access_token:
+            return store.access_token
         with self._lock:
             cached = self._tokens.get(store.store_key)
             if cached is not None and cached.expires_at - _REFRESH_SAFETY_MARGIN > datetime.now(
