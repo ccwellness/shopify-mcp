@@ -133,3 +133,64 @@ def normalize_inventory_item(
         )
 
     return NormalizedInventory(item=item, levels=tuple(levels))
+
+
+def normalize_inventory_item_live(
+    store_id: StoreId,
+    payload: dict[str, Any],
+) -> NormalizedInventory:
+    """DB-free variant: derive all ids from Shopify `legacyResourceId`.
+
+    Unlike `normalize_inventory_item`, this keeps every level (no location is
+    "unknown" in live mode) and resolves variant/location/item ids from the
+    GraphQL `legacyResourceId` fields, so the query must select them.
+    """
+    variant = payload.get("variant") or {}
+    variant_legacy = _opt_legacy_id(variant.get("legacyResourceId"))
+    item_legacy = _legacy_id(payload.get("legacyResourceId"))
+
+    item = InventoryItem(
+        id=InventoryItemId(item_legacy),
+        store_id=store_id,
+        variant_id=VariantId(variant_legacy) if variant_legacy is not None else None,
+        gid=str(payload["id"]),
+        legacy_id=item_legacy,
+        sku=payload.get("sku"),
+        tracked=bool(payload.get("tracked", True)),
+    )
+
+    levels: list[InventoryLevel] = []
+    inventory_levels = payload.get("inventoryLevels") or {}
+    edges = inventory_levels.get("edges") or []
+    now = datetime.now(tz=UTC)
+    for edge in edges:
+        node = (edge or {}).get("node") or {}
+        location = node.get("location") or {}
+        location_legacy = _opt_legacy_id(location.get("legacyResourceId"))
+        if location_legacy is None:
+            continue
+        qty_map = _quantities_to_dict(node.get("quantities"))
+        levels.append(
+            InventoryLevel(
+                id=InventoryLevelId(0),
+                store_id=store_id,
+                inventory_item_id=InventoryItemId(item_legacy),
+                location_id=LocationId(location_legacy),
+                available=qty_map.get("available"),
+                on_hand=qty_map.get("on_hand"),
+                committed=qty_map.get("committed"),
+                incoming=qty_map.get("incoming"),
+                updated_at=now,
+            )
+        )
+
+    return NormalizedInventory(item=item, levels=tuple(levels))
+
+
+def _opt_legacy_id(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
