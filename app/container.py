@@ -23,6 +23,7 @@ from collections.abc import Callable
 from dependency_injector import containers, providers
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config_mode import resolve_data_source
 from app.db.engine import get_session_factory
 from app.db.unit_of_work import SqlAlchemyUnitOfWork
 from app.domain.repositories import UnitOfWork
@@ -41,6 +42,7 @@ from app.services.webhook_ingest import WebhookIngestService
 from app.shopify.bulk import BulkOperationsClient
 from app.shopify.client import ShopifyClient
 from app.shopify.config import load_store_configs
+from app.shopify.repositories import ShopifyUnitOfWork, StoreIndex, build_store_index
 
 
 def _build_uow_factory(
@@ -50,6 +52,18 @@ def _build_uow_factory(
 
     def factory() -> UnitOfWork:
         return SqlAlchemyUnitOfWork(session_factory)
+
+    return factory
+
+
+def _build_live_uow_factory(
+    client: ShopifyClient,
+    index: StoreIndex,
+) -> Callable[[], UnitOfWork]:
+    """Build the `() -> UnitOfWork` callable for live (database-free) mode."""
+
+    def factory() -> UnitOfWork:
+        return ShopifyUnitOfWork(client, index)
 
     return factory
 
@@ -65,18 +79,26 @@ class Container(containers.DeclarativeContainer):
     # ---- L1 Infrastructure ----------------------------------------------
     session_factory = providers.Singleton(get_session_factory)
 
+    shopify_client = providers.Singleton(ShopifyClient, store_configs)
+    bulk_client = providers.Singleton(BulkOperationsClient, shopify_client)
+
+    # Synthetic store-id index for live mode (db ↔ live bijection by store_key).
+    store_index = providers.Singleton(build_store_index, store_configs)
+
     # uow_factory is itself a callable: `container.uow_factory()` returns
-    # the `() -> UnitOfWork` lambda services hold onto. Singleton means the
-    # same lambda is reused, but each call to it produces a fresh UoW.
-    uow_factory = providers.Singleton(
-        _build_uow_factory,
-        session_factory=session_factory,
+    # the `() -> UnitOfWork` lambda services hold onto. The Selector picks the
+    # data source at access time; CRITICAL: in live mode the `db` branch (and
+    # thus `session_factory` → engine) is never evaluated, so no DB connection
+    # is ever opened without a DATABASE_URL.
+    data_source = providers.Callable(resolve_data_source)
+
+    uow_factory = providers.Selector(
+        data_source,
+        db=providers.Singleton(_build_uow_factory, session_factory=session_factory),
+        live=providers.Singleton(_build_live_uow_factory, client=shopify_client, index=store_index),
     )
 
     job_queue = providers.Singleton(InlineJobQueue)
-
-    shopify_client = providers.Singleton(ShopifyClient, store_configs)
-    bulk_client = providers.Singleton(BulkOperationsClient, shopify_client)
 
     # ---- L4 Services -----------------------------------------------------
     auth_service = providers.Factory(

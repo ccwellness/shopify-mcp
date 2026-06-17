@@ -13,6 +13,7 @@ it in a tiny ASGI middleware that runs before the MCP handler.
 from __future__ import annotations
 
 import logging
+import secrets
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -45,6 +46,42 @@ class BearerAuthMiddleware:
             return  # _send_401 already responded
 
         ctx_token = set_caller_identity(token_name)
+        try:
+            await self._app(scope, receive, send)
+        finally:
+            reset_caller_identity(ctx_token)
+
+
+class StaticTokenAuthMiddleware:
+    """Bearer auth for live mode, where there is no DB token store.
+
+    Validates the `Authorization: Bearer <token>` header against a single
+    `MCP_STATIC_TOKEN` (constant-time compare). Used for the HTTP transport
+    when running database-free; stdio needs no auth.
+    """
+
+    def __init__(self, app: Callable[..., Awaitable[None]], *, token: str) -> None:
+        self._app = app
+        self._token = token
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Awaitable[dict[str, Any]]],
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        if scope["type"] != _ASGI_HTTP:
+            await self._app(scope, receive, send)
+            return
+
+        headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+        raw = headers.get("authorization", "")
+        presented = raw.removeprefix("Bearer ").strip() if raw.startswith("Bearer ") else ""
+        if not presented or not secrets.compare_digest(presented, self._token):
+            await _send_401(send, "invalid or missing token")
+            return
+
+        ctx_token = set_caller_identity("live")
         try:
             await self._app(scope, receive, send)
         finally:

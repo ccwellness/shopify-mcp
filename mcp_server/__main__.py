@@ -22,7 +22,8 @@ load_dotenv()
 
 # Tool modules register against `mcp` on import.
 import mcp_server.tools  # noqa: E402, F401
-from mcp_server.auth import BearerAuthMiddleware  # noqa: E402
+from app.config_mode import resolve_data_source  # noqa: E402
+from mcp_server.auth import BearerAuthMiddleware, StaticTokenAuthMiddleware  # noqa: E402
 from mcp_server.server import mcp  # noqa: E402
 
 
@@ -60,11 +61,27 @@ def _serve_stdio() -> int:
 
 
 def _serve_http(*, host: str, port: int) -> int:
-    """ASGI HTTP transport wrapped in BearerAuthMiddleware (TR-5)."""
+    """ASGI HTTP transport behind bearer auth (TR-5).
+
+    DB mode validates tokens through `AuthService` (the REST token store).
+    Live mode has no token store, so it requires a single `MCP_STATIC_TOKEN`
+    and fails fast if one isn't set — a network listener must never run
+    unauthenticated.
+    """
     import uvicorn  # noqa: PLC0415 — defer import; stdio path doesn't need it
 
     app = mcp.http_app()
-    secured = BearerAuthMiddleware(app)
+    if resolve_data_source() == "live":
+        static_token = os.environ.get("MCP_STATIC_TOKEN")
+        if not static_token:
+            sys.stderr.write(
+                "ERROR: HTTP transport in live mode requires MCP_STATIC_TOKEN "
+                "(no DB token store available). Set it or run stdio.\n"
+            )
+            return 2
+        secured: object = StaticTokenAuthMiddleware(app, token=static_token)
+    else:
+        secured = BearerAuthMiddleware(app)
     uvicorn.run(secured, host=host, port=port, log_level="info")
     return 0
 
